@@ -1,5 +1,6 @@
 #include <glad/glad.h>  // Needs to be included before gl_interop
 
+
 #include <cuda_gl_interop.h>
 #include <cuda_runtime.h>
 
@@ -21,8 +22,8 @@
 
 #include <GLFW/glfw3.h>
 
-#include "pathTracer.h"
 
+#include <iostream>
 #include <array>
 #include <cstring>
 #include <fstream>
@@ -31,11 +32,14 @@
 #include <sstream>
 #include <string>
 
-#include <iostream>
 
+#include "TinyObjWrapper.h"
+#include "pathTracer.h"
 
 constexpr unsigned int maxiumumRecursionDepth = 8;
 constexpr int32_t samples_per_launch = 8;
+
+const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
 
 bool refreshAccumulationBuffer = false;
 
@@ -55,9 +59,6 @@ using RayGenerationRecord = SBTRecord<RayGenerationData>;
 using MissRecord = SBTRecord<MissData>;
 using HitGroupRecord = SBTRecord<HitGroupData>;
 
-struct Vertex {
-    float x, y, z, padding;
-};
 
 struct IndexedTrianlge {
     uint32_t v1, v2, v3, padding;
@@ -93,160 +94,161 @@ struct PathTracerState {
 // SCENE DATA
 //const int32_t TRIANGLE_COUNT = 32;
 const int32_t TRIANGLE_COUNT = 22;
-const int32_t MAT_COUNT = 4;
+////const int32_t MAT_COUNT = 4;
 
-const static std::array<Vertex, TRIANGLE_COUNT * 3> g_vertices =
-{ {
-    // Floor  -- white lambert
-    {    0.0f,    0.0f,    0.0f, 0.0f },
-    {    0.0f,    0.0f,  559.2f, 0.0f },
-    {  556.0f,    0.0f,  559.2f, 0.0f },
-    {    0.0f,    0.0f,    0.0f, 0.0f },
-    {  556.0f,    0.0f,  559.2f, 0.0f },
-    {  556.0f,    0.0f,    0.0f, 0.0f },
+//
+//const static std::array<Vertex, TRIANGLE_COUNT * 3> g_vertices =
+//{ {
+//    // Floor  -- white lambert
+//    {    0.0f,    0.0f,    0.0f, 0.0f },
+//    {    0.0f,    0.0f,  559.2f, 0.0f },
+//    {  556.0f,    0.0f,  559.2f, 0.0f },
+//    {    0.0f,    0.0f,    0.0f, 0.0f },
+//    {  556.0f,    0.0f,  559.2f, 0.0f },
+//    {  556.0f,    0.0f,    0.0f, 0.0f },
+//
+//    // Ceiling -- white lambert
+//    {    0.0f,  548.8f,    0.0f, 0.0f },
+//    {  556.0f,  548.8f,    0.0f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//
+//    {    0.0f,  548.8f,    0.0f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//    {    0.0f,  548.8f,  559.2f, 0.0f },
+//
+//    // Back wall -- white lambert
+//    {    0.0f,    0.0f,  559.2f, 0.0f },
+//    {    0.0f,  548.8f,  559.2f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//
+//    {    0.0f,    0.0f,  559.2f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//    {  556.0f,    0.0f,  559.2f, 0.0f },
+//
+//    // Right wall -- green lambert
+//    {    0.0f,    0.0f,    0.0f, 0.0f },
+//    {    0.0f,  548.8f,    0.0f, 0.0f },
+//    {    0.0f,  548.8f,  559.2f, 0.0f },
+//
+//    {    0.0f,    0.0f,    0.0f, 0.0f },
+//    {    0.0f,  548.8f,  559.2f, 0.0f },
+//    {    0.0f,    0.0f,  559.2f, 0.0f },
+//
+//    // Left wall -- red lambert
+//    {  556.0f,    0.0f,    0.0f, 0.0f },
+//    {  556.0f,    0.0f,  559.2f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//
+//    {  556.0f,    0.0f,    0.0f, 0.0f },
+//    {  556.0f,  548.8f,  559.2f, 0.0f },
+//    {  556.0f,  548.8f,    0.0f, 0.0f },
+//
+//    // Short block -- white lambert
+//   /* {  130.0f,  165.0f,   65.0f, 0.0f },
+//    {   82.0f,  165.0f,  225.0f, 0.0f },
+//    {  242.0f,  165.0f,  274.0f, 0.0f },
+//
+//    {  130.0f,  165.0f,   65.0f, 0.0f },
+//    {  242.0f,  165.0f,  274.0f, 0.0f },
+//    {  290.0f,  165.0f,  114.0f, 0.0f },
+//
+//    {  290.0f,    0.0f,  114.0f, 0.0f },
+//    {  290.0f,  165.0f,  114.0f, 0.0f },
+//    {  240.0f,  165.0f,  272.0f, 0.0f },
+//
+//    {  290.0f,    0.0f,  114.0f, 0.0f },
+//    {  240.0f,  165.0f,  272.0f, 0.0f },
+//    {  240.0f,    0.0f,  272.0f, 0.0f },
+//
+//    {  130.0f,    0.0f,   65.0f, 0.0f },
+//    {  130.0f,  165.0f,   65.0f, 0.0f },
+//    {  290.0f,  165.0f,  114.0f, 0.0f },
+//
+//    {  130.0f,    0.0f,   65.0f, 0.0f },
+//    {  290.0f,  165.0f,  114.0f, 0.0f },
+//    {  290.0f,    0.0f,  114.0f, 0.0f },
+//
+//    {   82.0f,    0.0f,  225.0f, 0.0f },
+//    {   82.0f,  165.0f,  225.0f, 0.0f },
+//    {  130.0f,  165.0f,   65.0f, 0.0f },
+//
+//    {   82.0f,    0.0f,  225.0f, 0.0f },
+//    {  130.0f,  165.0f,   65.0f, 0.0f },
+//    {  130.0f,    0.0f,   65.0f, 0.0f },
+//
+//    {  240.0f,    0.0f,  272.0f, 0.0f },
+//    {  240.0f,  165.0f,  272.0f, 0.0f },
+//    {   82.0f,  165.0f,  225.0f, 0.0f },
+//
+//    {  240.0f,    0.0f,  272.0f, 0.0f },
+//    {   82.0f,  165.0f,  225.0f, 0.0f },
+//    {   82.0f,    0.0f,  225.0f, 0.0f },*/
+//
+//    // Tall block -- white lambert
+//    {  423.0f,  330.0f,  247.0f, 0.0f },
+//    {  265.0f,  330.0f,  296.0f, 0.0f },
+//    {  314.0f,  330.0f,  455.0f, 0.0f },
+//
+//    {  423.0f,  330.0f,  247.0f, 0.0f },
+//    {  314.0f,  330.0f,  455.0f, 0.0f },
+//    {  472.0f,  330.0f,  406.0f, 0.0f },
+//
+//    {  423.0f,    0.0f,  247.0f, 0.0f },
+//    {  423.0f,  330.0f,  247.0f, 0.0f },
+//    {  472.0f,  330.0f,  406.0f, 0.0f },
+//
+//    {  423.0f,    0.0f,  247.0f, 0.0f },
+//    {  472.0f,  330.0f,  406.0f, 0.0f },
+//    {  472.0f,    0.0f,  406.0f, 0.0f },
+//
+//    {  472.0f,    0.0f,  406.0f, 0.0f },
+//    {  472.0f,  330.0f,  406.0f, 0.0f },
+//    {  314.0f,  330.0f,  456.0f, 0.0f },
+//
+//    {  472.0f,    0.0f,  406.0f, 0.0f },
+//    {  314.0f,  330.0f,  456.0f, 0.0f },
+//    {  314.0f,    0.0f,  456.0f, 0.0f },
+//
+//    {  314.0f,    0.0f,  456.0f, 0.0f },
+//    {  314.0f,  330.0f,  456.0f, 0.0f },
+//    {  265.0f,  330.0f,  296.0f, 0.0f },
+//
+//    {  314.0f,    0.0f,  456.0f, 0.0f },
+//    {  265.0f,  330.0f,  296.0f, 0.0f },
+//    {  265.0f,    0.0f,  296.0f, 0.0f },
+//
+//    {  265.0f,    0.0f,  296.0f, 0.0f },
+//    {  265.0f,  330.0f,  296.0f, 0.0f },
+//    {  423.0f,  330.0f,  247.0f, 0.0f },
+//
+//    {  265.0f,    0.0f,  296.0f, 0.0f },
+//    {  423.0f,  330.0f,  247.0f, 0.0f },
+//    {  423.0f,    0.0f,  247.0f, 0.0f },
+//
+//    // Ceiling light -- emmissive
+//    {  343.0f,  548.6f,  227.0f, 0.0f },
+//    {  213.0f,  548.6f,  227.0f, 0.0f },
+//    {  213.0f,  548.6f,  332.0f, 0.0f },
+//
+//    {  343.0f,  548.6f,  227.0f, 0.0f },
+//    {  213.0f,  548.6f,  332.0f, 0.0f },
+//    {  343.0f,  548.6f,  332.0f, 0.0f }
+//} };
 
-    // Ceiling -- white lambert
-    {    0.0f,  548.8f,    0.0f, 0.0f },
-    {  556.0f,  548.8f,    0.0f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-
-    {    0.0f,  548.8f,    0.0f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-    {    0.0f,  548.8f,  559.2f, 0.0f },
-
-    // Back wall -- white lambert
-    {    0.0f,    0.0f,  559.2f, 0.0f },
-    {    0.0f,  548.8f,  559.2f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-
-    {    0.0f,    0.0f,  559.2f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-    {  556.0f,    0.0f,  559.2f, 0.0f },
-
-    // Right wall -- green lambert
-    {    0.0f,    0.0f,    0.0f, 0.0f },
-    {    0.0f,  548.8f,    0.0f, 0.0f },
-    {    0.0f,  548.8f,  559.2f, 0.0f },
-
-    {    0.0f,    0.0f,    0.0f, 0.0f },
-    {    0.0f,  548.8f,  559.2f, 0.0f },
-    {    0.0f,    0.0f,  559.2f, 0.0f },
-
-    // Left wall -- red lambert
-    {  556.0f,    0.0f,    0.0f, 0.0f },
-    {  556.0f,    0.0f,  559.2f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-
-    {  556.0f,    0.0f,    0.0f, 0.0f },
-    {  556.0f,  548.8f,  559.2f, 0.0f },
-    {  556.0f,  548.8f,    0.0f, 0.0f },
-
-    // Short block -- white lambert
-   /* {  130.0f,  165.0f,   65.0f, 0.0f },
-    {   82.0f,  165.0f,  225.0f, 0.0f },
-    {  242.0f,  165.0f,  274.0f, 0.0f },
-
-    {  130.0f,  165.0f,   65.0f, 0.0f },
-    {  242.0f,  165.0f,  274.0f, 0.0f },
-    {  290.0f,  165.0f,  114.0f, 0.0f },
-
-    {  290.0f,    0.0f,  114.0f, 0.0f },
-    {  290.0f,  165.0f,  114.0f, 0.0f },
-    {  240.0f,  165.0f,  272.0f, 0.0f },
-
-    {  290.0f,    0.0f,  114.0f, 0.0f },
-    {  240.0f,  165.0f,  272.0f, 0.0f },
-    {  240.0f,    0.0f,  272.0f, 0.0f },
-
-    {  130.0f,    0.0f,   65.0f, 0.0f },
-    {  130.0f,  165.0f,   65.0f, 0.0f },
-    {  290.0f,  165.0f,  114.0f, 0.0f },
-
-    {  130.0f,    0.0f,   65.0f, 0.0f },
-    {  290.0f,  165.0f,  114.0f, 0.0f },
-    {  290.0f,    0.0f,  114.0f, 0.0f },
-
-    {   82.0f,    0.0f,  225.0f, 0.0f },
-    {   82.0f,  165.0f,  225.0f, 0.0f },
-    {  130.0f,  165.0f,   65.0f, 0.0f },
-
-    {   82.0f,    0.0f,  225.0f, 0.0f },
-    {  130.0f,  165.0f,   65.0f, 0.0f },
-    {  130.0f,    0.0f,   65.0f, 0.0f },
-
-    {  240.0f,    0.0f,  272.0f, 0.0f },
-    {  240.0f,  165.0f,  272.0f, 0.0f },
-    {   82.0f,  165.0f,  225.0f, 0.0f },
-
-    {  240.0f,    0.0f,  272.0f, 0.0f },
-    {   82.0f,  165.0f,  225.0f, 0.0f },
-    {   82.0f,    0.0f,  225.0f, 0.0f },*/
-
-    // Tall block -- white lambert
-    {  423.0f,  330.0f,  247.0f, 0.0f },
-    {  265.0f,  330.0f,  296.0f, 0.0f },
-    {  314.0f,  330.0f,  455.0f, 0.0f },
-
-    {  423.0f,  330.0f,  247.0f, 0.0f },
-    {  314.0f,  330.0f,  455.0f, 0.0f },
-    {  472.0f,  330.0f,  406.0f, 0.0f },
-
-    {  423.0f,    0.0f,  247.0f, 0.0f },
-    {  423.0f,  330.0f,  247.0f, 0.0f },
-    {  472.0f,  330.0f,  406.0f, 0.0f },
-
-    {  423.0f,    0.0f,  247.0f, 0.0f },
-    {  472.0f,  330.0f,  406.0f, 0.0f },
-    {  472.0f,    0.0f,  406.0f, 0.0f },
-
-    {  472.0f,    0.0f,  406.0f, 0.0f },
-    {  472.0f,  330.0f,  406.0f, 0.0f },
-    {  314.0f,  330.0f,  456.0f, 0.0f },
-
-    {  472.0f,    0.0f,  406.0f, 0.0f },
-    {  314.0f,  330.0f,  456.0f, 0.0f },
-    {  314.0f,    0.0f,  456.0f, 0.0f },
-
-    {  314.0f,    0.0f,  456.0f, 0.0f },
-    {  314.0f,  330.0f,  456.0f, 0.0f },
-    {  265.0f,  330.0f,  296.0f, 0.0f },
-
-    {  314.0f,    0.0f,  456.0f, 0.0f },
-    {  265.0f,  330.0f,  296.0f, 0.0f },
-    {  265.0f,    0.0f,  296.0f, 0.0f },
-
-    {  265.0f,    0.0f,  296.0f, 0.0f },
-    {  265.0f,  330.0f,  296.0f, 0.0f },
-    {  423.0f,  330.0f,  247.0f, 0.0f },
-
-    {  265.0f,    0.0f,  296.0f, 0.0f },
-    {  423.0f,  330.0f,  247.0f, 0.0f },
-    {  423.0f,    0.0f,  247.0f, 0.0f },
-
-    // Ceiling light -- emmissive
-    {  343.0f,  548.6f,  227.0f, 0.0f },
-    {  213.0f,  548.6f,  227.0f, 0.0f },
-    {  213.0f,  548.6f,  332.0f, 0.0f },
-
-    {  343.0f,  548.6f,  227.0f, 0.0f },
-    {  213.0f,  548.6f,  332.0f, 0.0f },
-    {  343.0f,  548.6f,  332.0f, 0.0f }
-} };
-
-static std::array<uint32_t, TRIANGLE_COUNT> g_mat_indices = { {
-    0, 0,                          // Floor         -- white lambert
-    0, 0,                          // Ceiling       -- white lambert
-    0, 0,                          // Back wall     -- white lambert
-    1, 1,                          // Right wall    -- green lambert
-    2, 2,                          // Left wall     -- red lambert
-    //0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Short block   -- white lambert
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Tall block    -- white lambert
-    3, 3                           // Ceiling light -- emmissive
-} };
+//static std::array<uint32_t, TRIANGLE_COUNT> g_mat_indices = { {
+//    0, 0,                          // Floor         -- white lambert
+//    0, 0,                          // Ceiling       -- white lambert
+//    0, 0,                          // Back wall     -- white lambert
+//    1, 1,                          // Right wall    -- green lambert
+//    2, 2,                          // Left wall     -- red lambert
+//    //0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Short block   -- white lambert
+//    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Tall block    -- white lambert
+//    3, 3                           // Ceiling light -- emmissive
+//} };
+//
 
 
-
-const std::array<float3, MAT_COUNT> g_emission_colors =
+const std::array<float3, 4> g_emission_colors =
 { {
     {  0.0f,  0.0f,  0.0f },
     {  0.0f,  0.0f,  0.0f },
@@ -256,13 +258,13 @@ const std::array<float3, MAT_COUNT> g_emission_colors =
 } };
 
 
-const std::array<float3, MAT_COUNT> g_diffuse_colors =
-{ {
-    { 0.80f, 0.80f, 0.80f },
-    { 0.05f, 0.80f, 0.05f },
-    { 0.80f, 0.05f, 0.05f },
-    { 0.50f, 0.00f, 0.00f }
-} };
+//const std::array<float3, MAT_COUNT> g_diffuse_colors =
+//{ {
+//    { 0.80f, 0.80f, 0.80f },
+//    { 0.05f, 0.80f, 0.05f },
+//    { 0.80f, 0.05f, 0.05f },
+//    { 0.50f, 0.00f, 0.00f }
+//} };
 
 static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
 {
@@ -400,23 +402,31 @@ void createDeviceContext(PathTracerState& state) {
 
 }
 
-void buildTheAccelarationStructure(PathTracerState& state) {
+void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) {
    // put all the geometry onto the device 
-  const size_t vetex_bytes_size = g_vertices.size() * sizeof(Vertex);
+  //const size_t vetex_bytes_size = g_vertices.size() * sizeof(Vertex);
+
+  std::vector<Vertex> h_vertices = objs.getVertices();
+  const size_t vetex_bytes_size = h_vertices.size() * sizeof(Vertex);
+
+  std::vector<uint32_t> h_mat_indices = objs.getMaterialIndices();
+  const size_t mat_bytes_size = h_mat_indices.size() * sizeof(uint32_t);
+  
+
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.d_vertices), vetex_bytes_size));
   CUDA_CHECK(cudaMemcpy(
     reinterpret_cast<void*>(state.d_vertices),
-    g_vertices.data(),
+    h_vertices.data(),
     vetex_bytes_size,
     cudaMemcpyHostToDevice
   ));
 
   CUdeviceptr d_material_indices = 0;
-  const size_t mat_bytes_size = g_mat_indices.size() * sizeof(uint32_t);
+  //const size_t mat_bytes_size = g_mat_indices.size() * sizeof(uint32_t);
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_material_indices), mat_bytes_size));
   CUDA_CHECK(cudaMemcpy(
     reinterpret_cast<void*>(d_material_indices),
-    g_mat_indices.data(),
+    h_mat_indices.data(),
     mat_bytes_size,
     cudaMemcpyHostToDevice
   ));
@@ -424,21 +434,22 @@ void buildTheAccelarationStructure(PathTracerState& state) {
   // BUILD THE BHV ( Optix calls it a GAS, but it's a BVH under the hood, so I'll call it a BHV ) 
   // Also, Optix uses the RT hardware to do the traversal so its super fast
   // This is the whole point of using Optix for this project because I have an RTX 3090 and I want to use it
-  uint32_t triangle_input_flags[MAT_COUNT] = {
-    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT,
-    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT,
-    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT,
-    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT
-  };
+  int mat_count = objs.getNumMaterials();
+
+  std::unique_ptr<uint32_t[]> triangle_input_flags(new uint32_t[mat_count]);
+  for (int i = 0; i < mat_count; i++) {
+    triangle_input_flags[i] = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+  }
+
 
   OptixBuildInput triangle_input = {};
   triangle_input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
   triangle_input.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
   triangle_input.triangleArray.vertexStrideInBytes = sizeof(Vertex);
-  triangle_input.triangleArray.numVertices = static_cast<uint32_t>(g_vertices.size());
+  triangle_input.triangleArray.numVertices = static_cast<uint32_t>(h_vertices.size());
   triangle_input.triangleArray.vertexBuffers = &state.d_vertices;
-  triangle_input.triangleArray.flags = triangle_input_flags;
-  triangle_input.triangleArray.numSbtRecords = MAT_COUNT;
+  triangle_input.triangleArray.flags = triangle_input_flags.get();
+  triangle_input.triangleArray.numSbtRecords = mat_count;
   triangle_input.triangleArray.sbtIndexOffsetBuffer = d_material_indices;
   triangle_input.triangleArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
   triangle_input.triangleArray.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
@@ -555,6 +566,8 @@ void createModule(PathTracerState& state) {
 void createProgramGroups(PathTracerState& state) {
   OptixProgramGroupOptions program_group_options = {}; // Initialize to zeros
   {
+
+
     OptixProgramGroupDesc raygen_prog_group_desc = {};
     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     raygen_prog_group_desc.raygen.module = state.module;
@@ -605,6 +618,7 @@ void createProgramGroups(PathTracerState& state) {
 
 void createPipeline(PathTracerState& state) {
   OptixProgramGroup program_groups[] = { state.raygen_prog_group, state.miss_prog_group, state.hitgroup_prog_group };
+  
 
   OptixPipelineLinkOptions pipeline_link_options = {};
   pipeline_link_options.maxTraceDepth = maxiumumRecursionDepth;
@@ -652,7 +666,13 @@ void createPipeline(PathTracerState& state) {
 
 }
 
-void createShaderBindingTable(PathTracerState& state) {
+
+
+
+void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
+
+  std::vector<float3> materials = obj.getMaterials();
+
   CUdeviceptr d_raygen_record;
   const size_t raygen_record_size = sizeof(RayGenerationRecord);
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_raygen_record), raygen_record_size));
@@ -684,26 +704,36 @@ void createShaderBindingTable(PathTracerState& state) {
 
   CUdeviceptr d_hitgroup_record;
   const size_t hitgroup_record_size = sizeof(HitGroupRecord);
-  CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_hitgroup_record), hitgroup_record_size * NUM_RAYTYPES * MAT_COUNT));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_hitgroup_record), hitgroup_record_size * NUM_RAYTYPES * materials.size()));
 
-  HitGroupRecord hitgroup_records[MAT_COUNT * NUM_RAYTYPES];
-  for (int i = 0; i < MAT_COUNT; i++) 
+  
+  //std::array<HitGroupRecord,h_diffuse_colors.size() * NUM_RAYTYPES> hitgroup_records;
+
+  size_t mat_count = materials.size();
+
+  HitGroupRecord* hitgroup_records = new HitGroupRecord[mat_count * NUM_RAYTYPES];
+  for (int i = 0; i < materials.size(); i++)
   {
 
     {
       const int shaderBindingTableIndex = i * NUM_RAYTYPES + 0;
+
+      
+
       OPTIX_CHECK(optixSbtRecordPackHeader(state.hitgroup_prog_group, &hitgroup_records[shaderBindingTableIndex]));
 
-      hitgroup_records[shaderBindingTableIndex].data.emissionColor = g_emission_colors[i];
-      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = g_diffuse_colors[i];
+      float3 emission_color = g_emission_colors.size() > i ? g_emission_colors[i] : make_float3(0.0f);
+
+      hitgroup_records[shaderBindingTableIndex].data.emissionColor = emission_color;
+      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i];
       hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
     }
   }
 
   CUDA_CHECK(cudaMemcpy(
     reinterpret_cast<void*>(d_hitgroup_record),
-    hitgroup_records,
-    hitgroup_record_size * NUM_RAYTYPES * MAT_COUNT,
+    &hitgroup_records,
+    hitgroup_record_size * NUM_RAYTYPES * mat_count,
     cudaMemcpyHostToDevice
   ));
 
@@ -713,7 +743,9 @@ void createShaderBindingTable(PathTracerState& state) {
   state.sbt.missRecordCount = NUM_RAYTYPES;
   state.sbt.hitgroupRecordBase = d_hitgroup_record;
   state.sbt.hitgroupRecordStrideInBytes = static_cast<uint32_t>(hitgroup_record_size);
-  state.sbt.hitgroupRecordCount = NUM_RAYTYPES * MAT_COUNT;
+  state.sbt.hitgroupRecordCount = NUM_RAYTYPES * mat_count;
+
+  delete[] hitgroup_records;
 
 }
 
@@ -739,6 +771,8 @@ void CleanAllTheThings(PathTracerState& state) {
 void main() {
     std::cout << "hello world" << std::endl;
 
+    TinyObjWrapper obj(objfilepath);
+
     PathTracerState state;
     state.params.width = 512;
     state.params.height = 512;
@@ -753,11 +787,11 @@ void main() {
       g_camera.UVWFrame(state.params.cameraU, state.params.cameraV, state.params.cameraW);
 
       createDeviceContext(state);
-      buildTheAccelarationStructure(state);
+      buildTheAccelarationStructure(state, obj);
       createModule(state);
       createProgramGroups(state);
       createPipeline(state);
-      createShaderBindingTable(state);
+      createShaderBindingTable(state, obj);
       initializeTheLaunch(state);
 
       GLFWwindow* window = sutil::initUI( "Path Tracer", state.params.width, state.params.height );

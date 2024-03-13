@@ -531,6 +531,10 @@ function(OPTIX_add_sample_executable target_name_base target_name_var)
 endfunction()
 
 #########################################################
+# Extra libraries use by the project.
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/util)
+
+#########################################################
 #  List of samples found in subdirectories.
 #
 # If you wish to start your own sample, you can copy one of the sample's directories.

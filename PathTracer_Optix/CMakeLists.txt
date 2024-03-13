@@ -30,6 +30,8 @@ OPTIX_add_sample_executable( optixPathTracer target_name
   pathTracerPrograms.cu
   PathTracerMain.cpp
   pathTracer.h
+  TinyObjWrapper.h
+  TinyObjWrapper.cpp
   OPTIONS -rdc true
   )
 
