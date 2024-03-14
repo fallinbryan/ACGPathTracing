@@ -228,12 +228,14 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
    // put all the geometry onto the device 
   //const size_t vetex_bytes_size = g_vertices.size() * sizeof(Vertex);
 
-  std::vector<Vertex> h_vertices = objs.getVertices();
-  const size_t vetex_bytes_size = h_vertices.size() * sizeof(Vertex);
+  std::vector<float> h_vertices = objs.getVerticesFloat();
+  const size_t vetex_bytes_size = h_vertices.size() * sizeof(float);
 
   std::vector<uint32_t> h_mat_indices = objs.getMaterialIndices();
   const size_t mat_bytes_size = h_mat_indices.size() * sizeof(uint32_t);
-  
+
+  std::vector<uint32_t> h_indxbuffer = objs.getIndexBuffer();
+  const size_t indx_bytes_size = h_indxbuffer.size() * sizeof(uint32_t);
 
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.d_vertices), vetex_bytes_size));
   CUDA_CHECK(cudaMemcpy(
@@ -253,6 +255,15 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
     cudaMemcpyHostToDevice
   ));
 
+  CUdeviceptr d_index_buffer = 0;
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_index_buffer), indx_bytes_size));
+  CUDA_CHECK(cudaMemcpy(
+    reinterpret_cast<void*>(d_index_buffer),
+    h_indxbuffer.data(),
+    indx_bytes_size,
+    cudaMemcpyHostToDevice
+  ));
+
   // BUILD THE BHV ( Optix calls it a GAS, but it's a BVH under the hood, so I'll call it a BHV ) 
   // Also, Optix uses the RT hardware to do the traversal so its super fast
   // This is the whole point of using Optix for this project because I have an RTX 3090 and I want to use it
@@ -267,10 +278,16 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   OptixBuildInput triangle_input = {};
   triangle_input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
   triangle_input.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
-  triangle_input.triangleArray.vertexStrideInBytes = sizeof(Vertex);
+  triangle_input.triangleArray.vertexStrideInBytes = sizeof(float) * 3;
   triangle_input.triangleArray.numVertices = static_cast<uint32_t>(h_vertices.size());
   triangle_input.triangleArray.vertexBuffers = &state.d_vertices;
   triangle_input.triangleArray.flags = triangle_input_flags.get();
+
+  triangle_input.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+  triangle_input.triangleArray.indexStrideInBytes = sizeof(uint32_t)*3;
+  triangle_input.triangleArray.numIndexTriplets = static_cast<uint32_t>(h_indxbuffer.size() / 3);
+  triangle_input.triangleArray.indexBuffer = d_index_buffer;
+
   triangle_input.triangleArray.numSbtRecords = mat_count;
   triangle_input.triangleArray.sbtIndexOffsetBuffer = d_material_indices;
   triangle_input.triangleArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);

@@ -225,6 +225,7 @@ extern "C" __global__ void __raygen__rg()
       (static_cast<float>(idx.y) + subpixel_jitter.y) / static_cast<float>(h)
     ) - 1.0f;
     float3 ray_direction = normalize(d.x * U + d.y * V + W);
+    ///printf("ray_direction: %f, %f, %f\n", ray_direction.x, ray_direction.y, ray_direction.z);
     float3 ray_origin = eye;
 
     RadiancePayloadRayData prd;
@@ -329,10 +330,15 @@ extern "C" __global__ void __closesthit__ch()
     cosine_sample_hemisphere(z1, z2, w_in);
     Onb onb(N);
     onb.inverse_transform(w_in);
-    prd.direction = w_in;
-    prd.origin = P;
+    //only if w_in is not (nan, nan, nan)
+    if (w_in.x == w_in.x && w_in.y == w_in.y && w_in.z == w_in.z)
+    {
+      prd.direction = w_in;
+      prd.origin = P;
+      prd.attenuation *= rt_data->diffuseColor;
+    }
+ 
 
-    prd.attenuation *= rt_data->diffuseColor;
   }
 
   const float z1 = rnd(seed);
