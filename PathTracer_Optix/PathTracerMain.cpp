@@ -36,14 +36,15 @@
 #include "TinyObjWrapper.h"
 #include "pathTracer.h"
 
-constexpr unsigned int maxiumumRecursionDepth = 8;
-constexpr int32_t samples_per_launch = 8;
+constexpr unsigned int maxiumumRecursionDepth = 2;
+constexpr int32_t samples_per_launch = 2;
 
 const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
 
 bool refreshAccumulationBuffer = false;
 
 sutil::Camera g_camera;
+
 
 
 int32_t width = 512;
@@ -58,15 +59,6 @@ struct SBTRecord {
 using RayGenerationRecord = SBTRecord<RayGenerationData>;
 using MissRecord = SBTRecord<MissData>;
 using HitGroupRecord = SBTRecord<HitGroupData>;
-
-
-struct IndexedTrianlge {
-    uint32_t v1, v2, v3, padding;
-};
-
-struct Instance {
-  float transform[12];
-};
 
 struct PathTracerState {
     OptixDeviceContext context = nullptr;
@@ -91,180 +83,10 @@ struct PathTracerState {
     OptixShaderBindingTable sbt = {};
 };
 
-// SCENE DATA
-//const int32_t TRIANGLE_COUNT = 32;
-const int32_t TRIANGLE_COUNT = 22;
-////const int32_t MAT_COUNT = 4;
-
-//
-//const static std::array<Vertex, TRIANGLE_COUNT * 3> g_vertices =
-//{ {
-//    // Floor  -- white lambert
-//    {    0.0f,    0.0f,    0.0f, 0.0f },
-//    {    0.0f,    0.0f,  559.2f, 0.0f },
-//    {  556.0f,    0.0f,  559.2f, 0.0f },
-//    {    0.0f,    0.0f,    0.0f, 0.0f },
-//    {  556.0f,    0.0f,  559.2f, 0.0f },
-//    {  556.0f,    0.0f,    0.0f, 0.0f },
-//
-//    // Ceiling -- white lambert
-//    {    0.0f,  548.8f,    0.0f, 0.0f },
-//    {  556.0f,  548.8f,    0.0f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//
-//    {    0.0f,  548.8f,    0.0f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//    {    0.0f,  548.8f,  559.2f, 0.0f },
-//
-//    // Back wall -- white lambert
-//    {    0.0f,    0.0f,  559.2f, 0.0f },
-//    {    0.0f,  548.8f,  559.2f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//
-//    {    0.0f,    0.0f,  559.2f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//    {  556.0f,    0.0f,  559.2f, 0.0f },
-//
-//    // Right wall -- green lambert
-//    {    0.0f,    0.0f,    0.0f, 0.0f },
-//    {    0.0f,  548.8f,    0.0f, 0.0f },
-//    {    0.0f,  548.8f,  559.2f, 0.0f },
-//
-//    {    0.0f,    0.0f,    0.0f, 0.0f },
-//    {    0.0f,  548.8f,  559.2f, 0.0f },
-//    {    0.0f,    0.0f,  559.2f, 0.0f },
-//
-//    // Left wall -- red lambert
-//    {  556.0f,    0.0f,    0.0f, 0.0f },
-//    {  556.0f,    0.0f,  559.2f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//
-//    {  556.0f,    0.0f,    0.0f, 0.0f },
-//    {  556.0f,  548.8f,  559.2f, 0.0f },
-//    {  556.0f,  548.8f,    0.0f, 0.0f },
-//
-//    // Short block -- white lambert
-//   /* {  130.0f,  165.0f,   65.0f, 0.0f },
-//    {   82.0f,  165.0f,  225.0f, 0.0f },
-//    {  242.0f,  165.0f,  274.0f, 0.0f },
-//
-//    {  130.0f,  165.0f,   65.0f, 0.0f },
-//    {  242.0f,  165.0f,  274.0f, 0.0f },
-//    {  290.0f,  165.0f,  114.0f, 0.0f },
-//
-//    {  290.0f,    0.0f,  114.0f, 0.0f },
-//    {  290.0f,  165.0f,  114.0f, 0.0f },
-//    {  240.0f,  165.0f,  272.0f, 0.0f },
-//
-//    {  290.0f,    0.0f,  114.0f, 0.0f },
-//    {  240.0f,  165.0f,  272.0f, 0.0f },
-//    {  240.0f,    0.0f,  272.0f, 0.0f },
-//
-//    {  130.0f,    0.0f,   65.0f, 0.0f },
-//    {  130.0f,  165.0f,   65.0f, 0.0f },
-//    {  290.0f,  165.0f,  114.0f, 0.0f },
-//
-//    {  130.0f,    0.0f,   65.0f, 0.0f },
-//    {  290.0f,  165.0f,  114.0f, 0.0f },
-//    {  290.0f,    0.0f,  114.0f, 0.0f },
-//
-//    {   82.0f,    0.0f,  225.0f, 0.0f },
-//    {   82.0f,  165.0f,  225.0f, 0.0f },
-//    {  130.0f,  165.0f,   65.0f, 0.0f },
-//
-//    {   82.0f,    0.0f,  225.0f, 0.0f },
-//    {  130.0f,  165.0f,   65.0f, 0.0f },
-//    {  130.0f,    0.0f,   65.0f, 0.0f },
-//
-//    {  240.0f,    0.0f,  272.0f, 0.0f },
-//    {  240.0f,  165.0f,  272.0f, 0.0f },
-//    {   82.0f,  165.0f,  225.0f, 0.0f },
-//
-//    {  240.0f,    0.0f,  272.0f, 0.0f },
-//    {   82.0f,  165.0f,  225.0f, 0.0f },
-//    {   82.0f,    0.0f,  225.0f, 0.0f },*/
-//
-//    // Tall block -- white lambert
-//    {  423.0f,  330.0f,  247.0f, 0.0f },
-//    {  265.0f,  330.0f,  296.0f, 0.0f },
-//    {  314.0f,  330.0f,  455.0f, 0.0f },
-//
-//    {  423.0f,  330.0f,  247.0f, 0.0f },
-//    {  314.0f,  330.0f,  455.0f, 0.0f },
-//    {  472.0f,  330.0f,  406.0f, 0.0f },
-//
-//    {  423.0f,    0.0f,  247.0f, 0.0f },
-//    {  423.0f,  330.0f,  247.0f, 0.0f },
-//    {  472.0f,  330.0f,  406.0f, 0.0f },
-//
-//    {  423.0f,    0.0f,  247.0f, 0.0f },
-//    {  472.0f,  330.0f,  406.0f, 0.0f },
-//    {  472.0f,    0.0f,  406.0f, 0.0f },
-//
-//    {  472.0f,    0.0f,  406.0f, 0.0f },
-//    {  472.0f,  330.0f,  406.0f, 0.0f },
-//    {  314.0f,  330.0f,  456.0f, 0.0f },
-//
-//    {  472.0f,    0.0f,  406.0f, 0.0f },
-//    {  314.0f,  330.0f,  456.0f, 0.0f },
-//    {  314.0f,    0.0f,  456.0f, 0.0f },
-//
-//    {  314.0f,    0.0f,  456.0f, 0.0f },
-//    {  314.0f,  330.0f,  456.0f, 0.0f },
-//    {  265.0f,  330.0f,  296.0f, 0.0f },
-//
-//    {  314.0f,    0.0f,  456.0f, 0.0f },
-//    {  265.0f,  330.0f,  296.0f, 0.0f },
-//    {  265.0f,    0.0f,  296.0f, 0.0f },
-//
-//    {  265.0f,    0.0f,  296.0f, 0.0f },
-//    {  265.0f,  330.0f,  296.0f, 0.0f },
-//    {  423.0f,  330.0f,  247.0f, 0.0f },
-//
-//    {  265.0f,    0.0f,  296.0f, 0.0f },
-//    {  423.0f,  330.0f,  247.0f, 0.0f },
-//    {  423.0f,    0.0f,  247.0f, 0.0f },
-//
-//    // Ceiling light -- emmissive
-//    {  343.0f,  548.6f,  227.0f, 0.0f },
-//    {  213.0f,  548.6f,  227.0f, 0.0f },
-//    {  213.0f,  548.6f,  332.0f, 0.0f },
-//
-//    {  343.0f,  548.6f,  227.0f, 0.0f },
-//    {  213.0f,  548.6f,  332.0f, 0.0f },
-//    {  343.0f,  548.6f,  332.0f, 0.0f }
-//} };
-
-//static std::array<uint32_t, TRIANGLE_COUNT> g_mat_indices = { {
-//    0, 0,                          // Floor         -- white lambert
-//    0, 0,                          // Ceiling       -- white lambert
-//    0, 0,                          // Back wall     -- white lambert
-//    1, 1,                          // Right wall    -- green lambert
-//    2, 2,                          // Left wall     -- red lambert
-//    //0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Short block   -- white lambert
-//    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Tall block    -- white lambert
-//    3, 3                           // Ceiling light -- emmissive
-//} };
-//
-
-
-const std::array<float3, 4> g_emission_colors =
-{ {
-    {  0.0f,  0.0f,  0.0f },
-    {  0.0f,  0.0f,  0.0f },
-    {  0.0f,  0.0f,  0.0f },
-    { 15.0f, 15.0f,  5.0f }
-
-} };
-
-
-//const std::array<float3, MAT_COUNT> g_diffuse_colors =
-//{ {
-//    { 0.80f, 0.80f, 0.80f },
-//    { 0.05f, 0.80f, 0.05f },
-//    { 0.80f, 0.05f, 0.05f },
-//    { 0.50f, 0.00f, 0.00f }
-//} };
+float3 tinyobjToFloat3(const tinyobj::real_t* v)
+{
+  return make_float3(v[0], v[1], v[2]);
+}
 
 static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
 {
@@ -455,7 +277,7 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   triangle_input.triangleArray.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
 
   OptixAccelBuildOptions accel_options = {};
-  accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
+  accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
   accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
   OptixAccelBufferSizes gas_buffer_sizes;
@@ -671,7 +493,7 @@ void createPipeline(PathTracerState& state) {
 
 void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
 
-  std::vector<float3> materials = obj.getMaterials();
+  std::vector<tinyobj::material_t> materials = obj.getMaterials();
 
   CUdeviceptr d_raygen_record;
   const size_t raygen_record_size = sizeof(RayGenerationRecord);
@@ -722,17 +544,17 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
 
       OPTIX_CHECK(optixSbtRecordPackHeader(state.hitgroup_prog_group, &hitgroup_records[shaderBindingTableIndex]));
 
-      float3 emission_color = g_emission_colors.size() > i ? g_emission_colors[i] : make_float3(0.0f);
+      
 
-      hitgroup_records[shaderBindingTableIndex].data.emissionColor = emission_color;
-      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i];
+      hitgroup_records[shaderBindingTableIndex].data.emissionColor = tinyobjToFloat3(materials[i].ambient);
+      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = tinyobjToFloat3(materials[i].diffuse);
       hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
     }
   }
 
   CUDA_CHECK(cudaMemcpy(
     reinterpret_cast<void*>(d_hitgroup_record),
-    &hitgroup_records,
+    hitgroup_records,
     hitgroup_record_size * NUM_RAYTYPES * mat_count,
     cudaMemcpyHostToDevice
   ));

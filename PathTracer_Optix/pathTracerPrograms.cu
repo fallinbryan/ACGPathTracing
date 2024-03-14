@@ -260,7 +260,7 @@ extern "C" __global__ void __raygen__rg()
       ++prd.depth;
     }
   } while (--i);
-
+  //printf("result: %f, %f, %f\n", result.x, result.y, result.z);
   const uint3    launch_index = optixGetLaunchIndex();
   const unsigned int image_index = launch_index.y * params.width + launch_index.x;
   float3         accum_color = result / static_cast<float>(params.samplesPerPixel);

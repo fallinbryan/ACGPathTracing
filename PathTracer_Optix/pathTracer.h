@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optix.h>
+#include "TinyObjWrapper.h"
 
 constexpr unsigned int NUM_RAYTYPES = 1; // TODO: Add shadow ray type
 
