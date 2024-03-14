@@ -22,6 +22,9 @@ bool TinyObjWrapper::loadFile(const std::string& filename)
   std::string err;
   std::string warn;
 
+  reader_config.triangulate = true;
+  reader_config.vertex_color = false;
+
   bool ret = reader.ParseFromFile(filename, reader_config);
 
   if (!ret) { 

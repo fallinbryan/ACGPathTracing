@@ -278,13 +278,13 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   OptixBuildInput triangle_input = {};
   triangle_input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
   triangle_input.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
-  triangle_input.triangleArray.vertexStrideInBytes = sizeof(float) * 3;
+  triangle_input.triangleArray.vertexStrideInBytes = 0;// sizeof(float) * 3;
   triangle_input.triangleArray.numVertices = static_cast<uint32_t>(h_vertices.size());
   triangle_input.triangleArray.vertexBuffers = &state.d_vertices;
   triangle_input.triangleArray.flags = triangle_input_flags.get();
 
   triangle_input.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
-  triangle_input.triangleArray.indexStrideInBytes = sizeof(uint32_t)*3;
+  triangle_input.triangleArray.indexStrideInBytes = 0;// sizeof(uint32_t);
   triangle_input.triangleArray.numIndexTriplets = static_cast<uint32_t>(h_indxbuffer.size() / 3);
   triangle_input.triangleArray.indexBuffer = d_index_buffer;
 
