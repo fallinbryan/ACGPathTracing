@@ -52,7 +52,7 @@ std::vector<float> TinyObjWrapper::getVerticesFloat() const
   return _vertices;
 }
 
-std::vector<tinyobj::material_t> TinyObjWrapper::getMaterials() const
+std::vector<Material> TinyObjWrapper::getMaterials() const
 {
 
   return _materials;
@@ -79,7 +79,34 @@ std::vector<uint32_t> TinyObjWrapper::getIndexBuffer() const
 void TinyObjWrapper::_updateMaterials()
 {
   auto& materials = reader.GetMaterials();
-  _materials = materials;
+  Material mat;
+  for (auto m : materials)
+  {
+    mat.diffuse = {m.diffuse[0], m.diffuse[1], m.diffuse[2]};
+    mat.emission = {m.emission[0], m.emission[1], m.emission[2]};
+    mat.roughness = m.roughness;
+    mat.metallic = m.metallic;
+    mat.ior = m.ior;
+
+    // set the bsdf type based on the material name.  if the name contains Refractive , then it's a refraction material
+    // if the name contains Metallic, then it's a metallic material
+    // otherwise, it's a diffuse material
+    if (m.name.find("Refractive") != std::string::npos)
+    {
+      mat.bsdfType = BSDFType::BSDF_REFRACTION;
+    }
+    else if (m.name.find("Metallic") != std::string::npos)
+    {
+      mat.bsdfType = BSDFType::BSDF_METALLIC;
+    }
+    else
+    {
+      mat.bsdfType = BSDFType::BSDF_DIFFUSE;
+    }
+  
+    _materials.push_back(mat);
+  } 
+  
 }
 
 void TinyObjWrapper::_updateMaterialIndices()
@@ -108,7 +135,15 @@ void TinyObjWrapper::_updateVertices()
   
   if (dataLoaded)
   {
-    _vertices = attrib.vertices;
+    _vertices.reserve((attrib.vertices.size() / 3) * 4);
+    for (size_t i = 0; i < attrib.vertices.size(); i += 3)
+    {
+      _vertices.push_back(attrib.vertices[i]);
+      _vertices.push_back(attrib.vertices[i + 1]);
+      _vertices.push_back(attrib.vertices[i + 2]);
+      _vertices.push_back(1.0f);
+    }
+   
  
   }
   

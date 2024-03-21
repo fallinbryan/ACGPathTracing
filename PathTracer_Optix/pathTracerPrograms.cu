@@ -302,13 +302,18 @@ extern "C" __global__ void __closesthit__ch()
 
   const int    prim_idx = optixGetPrimitiveIndex();
   const float3 ray_dir = optixGetWorldRayDirection();
-  const int    vert_idx_offset = prim_idx * 3;
-
+  //const int    vert_idx_offset = prim_idx * 3;
+  const uint3  idx = rt_data->indices[prim_idx];
   const bool useDirectLighting = params.useDirectLighting;
 
-  const float3 v0 = make_float3(rt_data->vertices[vert_idx_offset + 0]);
-  const float3 v1 = make_float3(rt_data->vertices[vert_idx_offset + 1]);
-  const float3 v2 = make_float3(rt_data->vertices[vert_idx_offset + 2]);
+  //const float3 v0 = make_float3(rt_data->vertices[vert_idx_offset + 0]);
+  //const float3 v1 = make_float3(rt_data->vertices[vert_idx_offset + 1]);
+  //const float3 v2 = make_float3(rt_data->vertices[vert_idx_offset + 2]);
+  const float3 v0 = make_float3(rt_data->vertices[idx.x]);
+  const float3 v1 = make_float3(rt_data->vertices[idx.y]);
+  const float3 v2 = make_float3(rt_data->vertices[idx.z]);
+
+
   const float3 N_0 = normalize(cross(v1 - v0, v2 - v0));
 
   const float3 N = faceforward(N_0, -ray_dir, N_0);
@@ -330,13 +335,11 @@ extern "C" __global__ void __closesthit__ch()
     cosine_sample_hemisphere(z1, z2, w_in);
     Onb onb(N);
     onb.inverse_transform(w_in);
-    //only if w_in is not (nan, nan, nan)
-    if (w_in.x == w_in.x && w_in.y == w_in.y && w_in.z == w_in.z)
-    {
+   
       prd.direction = w_in;
       prd.origin = P;
       prd.attenuation *= rt_data->diffuseColor;
-    }
+   
  
 
   }
@@ -347,31 +350,33 @@ extern "C" __global__ void __closesthit__ch()
 
   AreaLight light = params.areaLight;
   float weight = 0.01f;
-  if (useDirectLighting) {
-  const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
-
-  // Calculate properties of light sample (for area based pdf)
-  const float  Ldist = length(light_pos - P);
-  const float3 L = normalize(light_pos - P);
-  const float  nDl = dot(N, L);
-  const float  LnDl = -dot(light.normal, L);
-
-  if (nDl > 0.0f && LnDl > 0.0f)
+  if (useDirectLighting) 
   {
-      const bool occluded =
-        traceOcclusion(
-          params.handle,
-          P,
-          L,
-          0.01f,           // tmin
-          Ldist - 0.01f);  // tmax
+    weight = 0.0f;
+    const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
 
-      if (!occluded)
-      {
-        const float A = length(cross(light.v1, light.v2));
-        weight = nDl * LnDl * A / (M_PIf * Ldist * Ldist);
-      }
-    }                               
+    // Calculate properties of light sample (for area based pdf)
+    const float  Ldist = length(light_pos - P);
+    const float3 L = normalize(light_pos - P);
+    const float  nDl = dot(N, L);
+    const float  LnDl = -dot(light.normal, L);
+
+    if (nDl > 0.0f && LnDl > 0.0f)
+    {
+        const bool occluded =
+          traceOcclusion(
+            params.handle,
+            P,
+            L,
+            0.01f,           // tmin
+            Ldist - 0.01f);  // tmax
+
+        if (!occluded)
+        {
+          const float A = length(cross(light.v1, light.v2));
+          weight = nDl * LnDl * A / (M_PIf * Ldist * Ldist);
+        }
+      }                               
   }
 
   prd.radiance = light.emission * weight;

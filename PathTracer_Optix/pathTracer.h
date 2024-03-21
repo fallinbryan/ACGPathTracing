@@ -8,6 +8,7 @@ constexpr unsigned int NUM_RAYTYPES = 1; // TODO: Add shadow ray type
 constexpr OptixPayloadTypeID RADIANCE_PAYLOAD_TYPE = OPTIX_PAYLOAD_TYPE_ID_0;
 constexpr OptixPayloadTypeID SHADOW_PAYLOAD_TYPE = OPTIX_PAYLOAD_TYPE_ID_1;
 
+
 struct RadiancePayloadRayData {
   float3 attenuation; // Accumulated ray color
   unsigned int randomSeed; // Current random seed used for Monte Carlo sampling
@@ -101,7 +102,12 @@ struct MissData {
 };
 
 struct HitGroupData {
+  BSDFType bsdfType;
   float3 emissionColor;
   float3 diffuseColor;
+  float IOR;
+  float roughness;
+  float metallic;
   float4* vertices;
+  uint3* indices;
 };

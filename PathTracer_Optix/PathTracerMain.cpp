@@ -36,10 +36,11 @@
 #include "TinyObjWrapper.h"
 #include "pathTracer.h"
 
-constexpr unsigned int maxiumumRecursionDepth = 2;
-constexpr int32_t samples_per_launch = 2;
+constexpr unsigned int maxiumumRecursionDepth = 16;
+constexpr int32_t samples_per_launch = 32;
 
-const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
+//const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
+const std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj";
 
 bool refreshAccumulationBuffer = false;
 
@@ -66,6 +67,7 @@ struct PathTracerState {
     OptixTraversableHandle gas_handle = 0;
     CUdeviceptr d_gas_output_buffer = 0;
     CUdeviceptr d_vertices = 0;
+    CUdeviceptr d_indices = 0;
 
     OptixModule module = nullptr;
     OptixPipelineCompileOptions pipeline_compile_options = {};
@@ -123,7 +125,7 @@ void initializeTheLaunch(PathTracerState& state) {
   state.params.currentFrameIdx = 0u;
 
   state.params.areaLight.emission = make_float3(15.0f, 15.0f, 5.0f);
-  state.params.areaLight.corner = make_float3(343.0f, 548.6f, 227.0f);
+  state.params.areaLight.corner = make_float3(343.0f, 548.0f, 227.0f);
   state.params.areaLight.v1 = make_float3(0.0f, 0.0f, 105.0f);
   state.params.areaLight.v2 = make_float3(-130.0f, 0.0f, 0.0f);
   state.params.areaLight.normal = normalize(cross(state.params.areaLight.v1, state.params.areaLight.v2));
@@ -256,9 +258,9 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   ));
 
   CUdeviceptr d_index_buffer = 0;
-  CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_index_buffer), indx_bytes_size));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.d_indices), indx_bytes_size));
   CUDA_CHECK(cudaMemcpy(
-    reinterpret_cast<void*>(d_index_buffer),
+    reinterpret_cast<void*>(state.d_indices),
     h_indxbuffer.data(),
     indx_bytes_size,
     cudaMemcpyHostToDevice
@@ -278,7 +280,7 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   OptixBuildInput triangle_input = {};
   triangle_input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
   triangle_input.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
-  triangle_input.triangleArray.vertexStrideInBytes = 0;// sizeof(float) * 3;
+  triangle_input.triangleArray.vertexStrideInBytes = sizeof(float) * 4;
   triangle_input.triangleArray.numVertices = static_cast<uint32_t>(h_vertices.size());
   triangle_input.triangleArray.vertexBuffers = &state.d_vertices;
   triangle_input.triangleArray.flags = triangle_input_flags.get();
@@ -286,7 +288,7 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   triangle_input.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
   triangle_input.triangleArray.indexStrideInBytes = 0;// sizeof(uint32_t);
   triangle_input.triangleArray.numIndexTriplets = static_cast<uint32_t>(h_indxbuffer.size() / 3);
-  triangle_input.triangleArray.indexBuffer = d_index_buffer;
+  triangle_input.triangleArray.indexBuffer = state.d_indices;
 
   triangle_input.triangleArray.numSbtRecords = mat_count;
   triangle_input.triangleArray.sbtIndexOffsetBuffer = d_material_indices;
@@ -294,7 +296,7 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
   triangle_input.triangleArray.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
 
   OptixAccelBuildOptions accel_options = {};
-  accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+  accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
   accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
   OptixAccelBufferSizes gas_buffer_sizes;
@@ -373,8 +375,8 @@ void createModule(PathTracerState& state) {
 
   OptixModuleCompileOptions module_compile_options = {};
 
-  module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // TODO: Change this to 3 for release builds
-  module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;  // TODO: Change this to 0 for release builds
+  module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;/// OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // TODO: Change this to 3 for release builds
+  module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE; // OPTIX_COMPILE_DEBUG_LEVEL_FULL;  // TODO: Change this to 0 for release builds
 
   module_compile_options.numPayloadTypes = 1; // TODO: Change this to 2 for shadow rays
   module_compile_options.payloadTypes = &payloadType;
@@ -510,7 +512,7 @@ void createPipeline(PathTracerState& state) {
 
 void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
 
-  std::vector<tinyobj::material_t> materials = obj.getMaterials();
+  std::vector<Material> materials = obj.getMaterials();
 
   CUdeviceptr d_raygen_record;
   const size_t raygen_record_size = sizeof(RayGenerationRecord);
@@ -563,9 +565,14 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
 
       
 
-      hitgroup_records[shaderBindingTableIndex].data.emissionColor = tinyobjToFloat3(materials[i].ambient);
-      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = tinyobjToFloat3(materials[i].diffuse);
+      hitgroup_records[shaderBindingTableIndex].data.emissionColor = materials[i].emission;
+      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i].diffuse;
+      hitgroup_records[shaderBindingTableIndex].data.bsdfType = materials[i].bsdfType;
+      hitgroup_records[shaderBindingTableIndex].data.roughness = materials[i].roughness;
+      hitgroup_records[shaderBindingTableIndex].data.IOR = materials[i].ior;
+      hitgroup_records[shaderBindingTableIndex].data.metallic = materials[i].metallic;
       hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
+      hitgroup_records[shaderBindingTableIndex].data.indices = reinterpret_cast<uint3*>(state.d_indices);
     }
   }
 
@@ -627,11 +634,17 @@ void main() {
 
       createDeviceContext(state);
       buildTheAccelarationStructure(state, obj);
+      std::cout << "Acceleration Structure Built" << std::endl;
       createModule(state);
+      std::cout << "Module Created" << std::endl;
       createProgramGroups(state);
+      std::cout << "Program Groups Created" << std::endl;
       createPipeline(state);
+      std::cout << "Pipeline Created" << std::endl;
       createShaderBindingTable(state, obj);
+      std::cout << "Shader Binding Table Created" << std::endl;
       initializeTheLaunch(state);
+      std::cout << "Launch Initialized" << std::endl;
 
       GLFWwindow* window = sutil::initUI( "Path Tracer", state.params.width, state.params.height );
       glfwSetWindowUserPointer(window, &state.params);
@@ -651,9 +664,13 @@ void main() {
        {
           glfwPollEvents();
           updateState(output_buffer, state);
+          std::cout << "State Updated" << std::endl;
           LaunchCurrentFrame(output_buffer, state);
+          std::cout << "Frame Launched" << std::endl;
           showCurrentFrame(output_buffer, gl_display, window);
+          std::cout << "Frame Shown" << std::endl;
           glfwSwapBuffers(window);
+          std::cout << "Buffers Swapped" << std::endl;
           ++state.params.currentFrameIdx;
        } while (!glfwWindowShouldClose(window));
         CUDA_SYNC_CHECK();

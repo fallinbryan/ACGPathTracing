@@ -11,6 +11,22 @@ struct Vertex {
   float x, y, z;// , padding;
 };
 
+enum BSDFType {
+  BSDF_DIFFUSE,
+  BSDF_METALLIC,
+  BSDF_REFRACTION,
+};
+
+struct Material {
+  float3 diffuse;
+  float3 emission;
+  float roughness;
+  float metallic;
+  float ior;
+  BSDFType bsdfType;
+};
+
+
 struct float3;
 
 class TinyObjWrapper
@@ -29,7 +45,7 @@ class TinyObjWrapper
 
     std::vector<float> getVerticesFloat() const;
 
-    std::vector<tinyobj::material_t> getMaterials() const;
+    std::vector<Material> getMaterials() const;
     std::vector<uint32_t> getMaterialIndices() const;
     std::vector<uint32_t> getIndexBuffer() const;
 
@@ -42,7 +58,7 @@ private:
 
   std::vector<float> _vertices;
 
-  std::vector<tinyobj::material_t> _materials;
+  std::vector<Material> _materials;
   std::vector<uint32_t> _materialIndices;
   std::vector<uint32_t> _indexBuffer;
 
