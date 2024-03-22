@@ -48,8 +48,8 @@ sutil::Camera g_camera;
 
 
 
-int32_t width = 512;
-int32_t height = 512;
+int32_t width = 800;
+int32_t height = 800;
 
 template <typename T>
 struct SBTRecord {
@@ -77,6 +77,7 @@ struct PathTracerState {
     OptixProgramGroup raygen_prog_group = nullptr;
     OptixProgramGroup miss_prog_group = nullptr;
     OptixProgramGroup hitgroup_prog_group = nullptr;
+    OptixProgramGroup anyhit_prog_group = nullptr;
     
     CUstream stream = 0;
     PathTraceParams params = {};
@@ -273,7 +274,11 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
 
   std::unique_ptr<uint32_t[]> triangle_input_flags(new uint32_t[mat_count]);
   for (int i = 0; i < mat_count; i++) {
-    triangle_input_flags[i] = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+    if(objs.getMaterials()[i].bsdfType == BSDF_REFRACTION)
+      triangle_input_flags[i] = OPTIX_GEOMETRY_FLAG_NONE;
+    else
+      triangle_input_flags[i] = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+    
   }
 
 
@@ -454,6 +459,19 @@ void createProgramGroups(PathTracerState& state) {
       &state.hitgroup_prog_group
     ));
   
+    OptixProgramGroupDesc anyhit_prog_group_desc = {};
+    anyhit_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+    anyhit_prog_group_desc.hitgroup.moduleAH = state.module;
+    anyhit_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__ah";
+
+    OPTIX_CHECK_LOG(optixProgramGroupCreate(
+      state.context,
+      &anyhit_prog_group_desc,
+      1,  // num program groups
+      &program_group_options,
+      LOG, &LOG_SIZE,
+      &state.anyhit_prog_group
+    ));
   }
 }
 
@@ -479,6 +497,7 @@ void createPipeline(PathTracerState& state) {
   OPTIX_CHECK( optixUtilAccumulateStackSizes( state.raygen_prog_group, &stack_sizes, state.pipeline ) );
   OPTIX_CHECK( optixUtilAccumulateStackSizes( state.miss_prog_group, &stack_sizes, state.pipeline ) );
   OPTIX_CHECK( optixUtilAccumulateStackSizes( state.hitgroup_prog_group, &stack_sizes, state.pipeline ) );
+  OPTIX_CHECK( optixUtilAccumulateStackSizes( state.anyhit_prog_group, &stack_sizes, state.pipeline));
 
   uint32_t max_trace_depth = maxiumumRecursionDepth; 
   uint32_t max_cc_depth = 0;
@@ -620,8 +639,8 @@ void main() {
     TinyObjWrapper obj(objfilepath);
 
     PathTracerState state;
-    state.params.width = 512;
-    state.params.height = 512;
+    state.params.width = width;
+    state.params.height = height;
     sutil::CUDAOutputBufferType output_buffer_type = sutil::CUDAOutputBufferType::GL_INTEROP;
 
     try {
