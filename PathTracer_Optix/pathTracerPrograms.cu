@@ -183,6 +183,110 @@ static __forceinline__ __device__ float3 safeDivide(float3 a, float b) {
  * @param tmax The maximum t value for intersections.
  * @param prd The payload to store the radiance information in.
  */
+
+// Sample GGX distribution for importance sampling
+static __forceinline__ __device__ float3 sampleGGX(float u1, float u2, float roughness, const float3& N)
+{
+  // Convert (u1, u2) uniform random variables into GGX distribution
+  clamp(roughness, 0.001f, 1.0f); // Avoid division by zero (roughness = 0.0f is not allowed
+  float phi = 2.0f * M_PIf * u1;
+  float cosTheta = sqrtf((1.0f - u2) / (1.0f + (roughness * roughness - 1.0f) * u2));
+  float sinTheta = sqrtf(1.0f - cosTheta * cosTheta);
+
+  // Create sample vector in tangent space
+  float3 H;
+  H.x = sinTheta * cosf(phi);
+  H.y = sinTheta * sinf(phi);
+  H.z = cosTheta;
+
+  // Transform H to world space
+  float3 up = abs(N.z) < 0.999 ? make_float3(0, 0, 1) : make_float3(1, 0, 0);
+  float3 tangent = normalize(cross(up, N));
+  float3 bitangent = cross(N, tangent);
+  float3 sampleDir = H.x * tangent + H.y * bitangent + H.z * N;
+
+  return normalize(sampleDir);
+}
+
+// Fresnel-Schlick approximation for conductors derived from the Pbr Book
+static __forceinline__ __device__ float3 fresnelSchlickConductor(float cosTheta, float3 eta, float3 k)
+{
+  float3 eta2 = eta * eta;
+  float3 k2 = k * k;
+
+  float3 t1 = eta2 - k2 - make_float3(cosTheta * cosTheta);
+  float3 a2plusb2 = make_float3(sqrtf(t1.x * t1.x + 4 * eta2.x * k2.x),
+    sqrtf(t1.y * t1.y + 4 * eta2.y * k2.y),
+    sqrtf(t1.z * t1.z + 4 * eta2.z * k2.z));
+
+  float3 t2 = a2plusb2 + make_float3(cosTheta * cosTheta);
+
+  float3 Rs = (t2 - 2 * eta * cosTheta + make_float3(cosTheta * cosTheta)) / (t2 + 2 * eta * cosTheta + make_float3(cosTheta * cosTheta));
+  float3 Rp = Rs * (t2 - 2 * eta * cosTheta + make_float3(1)) / (t2 + 2 * eta * cosTheta + make_float3(1));
+
+  return (Rs + Rp) * 0.5f;
+}
+
+// Fresnel for dialectrics derived from the Pbr Book
+static __forceinline__ __device__ float FrDielectric(float cosThetaI, float etaI, float etaT) {
+  cosThetaI = clamp(cosThetaI, -1.0f, 1.0f);
+  // Flip the interface orientation if the incident ray is inside the material
+  bool entering = cosThetaI > 0.0f;
+  if (!entering) {
+    // Swap etaI and etaT for rays inside the material
+    float temp = etaI;
+    etaI = etaT;
+    etaT = temp;
+    cosThetaI = fabs(cosThetaI);
+  }
+
+  float sinThetaI = sqrtf(fmaxf(0.0f, 1.0f - cosThetaI * cosThetaI));
+  float sinThetaT = etaI / etaT * sinThetaI;
+
+  // Total internal reflection
+  if (sinThetaT >= 1.0f) {
+    return 1.0f; // When sinThetaT is greater or equal to 1, it indicates total internal reflection.
+  }
+
+  float cosThetaT = sqrtf(fmaxf(0.0f, 1.0f - sinThetaT * sinThetaT));
+
+  float rParl = ((etaT * cosThetaI) - (etaI * cosThetaT)) / ((etaT * cosThetaI) + (etaI * cosThetaT));
+  float rPerp = ((etaI * cosThetaI) - (etaT * cosThetaT)) / ((etaI * cosThetaI) + (etaT * cosThetaT));
+  return (rParl * rParl + rPerp * rPerp) / 2.0f;
+}
+
+
+
+
+// GGX/Trowbridge-Reitz Normal Distribution Function
+__forceinline__ __device__ float ggxNDF(float cosTheta, float roughness)
+{
+  clamp(roughness, 0.001f, 1.0f); // Avoid division by zero (roughness = 0.0f is not allowed
+  float alpha = roughness * roughness;
+  float denom = cosTheta * cosTheta * (alpha * alpha - 1.0f) + 1.0f;
+  return (alpha * alpha) / (M_PIf * denom * denom);
+}
+
+// Schlick-GGX Geometric Shadowing
+__forceinline__ __device__ float geometricSchlickGGX(float NdotV, float roughness)
+{
+  clamp(roughness, 0.001f, 1.0f); // Avoid division by zero (roughness = 0.0f is not allowed
+  float r = (roughness + 1.0f);
+  float k = (r * r) / 8.0f; // Beckmann approximation
+
+  float denom = NdotV * (1.0f - k) + k;
+  return NdotV / denom;
+}
+
+// Combined geometric shadowing for light and view directions
+__forceinline__ __device__ float geometricSmith(float NdotV, float NdotL, float roughness)
+{
+  clamp(roughness, 0.001f, 1.0f); // Avoid division by zero (roughness = 0.0f is not allowed
+  float ggxV = geometricSchlickGGX(NdotV, roughness);
+  float ggxL = geometricSchlickGGX(NdotL, roughness);
+  return ggxV * ggxL;
+}
+
 static __forceinline__ __device__ void traceRadiance(
   OptixTraversableHandle handle,
   float3                 ray_origin,
@@ -278,9 +382,19 @@ static __forceinline__ __device__ bool traceOcclusion(
     NUM_RAYTYPES,            // SBT stride
     0                          // missSBTIndex
   );
-  return optixHitObjectIsHit();
-}
+  if (optixHitObjectIsHit()) {
+    // get the object that was hit 
+    HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
+    if (rt_data->bsdfType == BSDFType::BSDF_REFRACTION) {
+      return false;
+    }
+    else {
+      return true;
+    }
+  }
 
+  return false;
+}
 
 /**
  * @brief Generates a ray for the current pixel and traces it through the scene.
@@ -303,7 +417,7 @@ static __forceinline__ __device__ bool traceOcclusion(
  */
 extern "C" __global__ void __raygen__rg()
 {
-  
+
   const int    w = params.width;
   const int    h = params.height;
   const float3 eye = params.cameraEye;
@@ -415,7 +529,7 @@ extern "C" __global__ void __raygen__rg()
 
 extern "C" __global__ void __miss__ms()
 {
-  
+
   optixSetPayloadTypes(RADIANCE_PAYLOAD_TYPE);
 
   MissData* rt_data = reinterpret_cast<MissData*>(optixGetSbtDataPointer());
@@ -443,6 +557,16 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   const bool useDirectLighting = params.useDirectLighting;
   const bool useImportanceSampling = params.useImportanceSampling;
 
+  const int       prim_idx = optixGetPrimitiveIndex();
+  const float3    ray_dir = optixGetWorldRayDirection();
+
+  const uint3     idx = rt_data->indices[prim_idx];
+  const bool      useDirectLighting = params.useDirectLighting;
+  const float     metallic = rt_data->metallic;
+  const float     roughness =  rt_data->roughness;
+  const float     IOR = rt_data->IOR;
+  const BSDFType  bsdfType = rt_data->bsdfType;
+
 
   const float3 v0 = make_float3(rt_data->vertices[idx.x]);
   const float3 v1 = make_float3(rt_data->vertices[idx.y]);
@@ -462,11 +586,13 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     prd.emissionColor = make_float3(0.0f);
 
   unsigned int seed = prd.randomSeed;
+
+  switch (bsdfType)
+  {
+  case BSDFType::BSDF_DIFFUSE:
   {
     const float z1 = rnd(seed);
     const float z2 = rnd(seed);
-
-
     float3 w_in;
     bool isRejected = false;
     if (useImportanceSampling)
@@ -495,17 +621,79 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     prd.attenuation *= rt_data->diffuseColor;
     
 
+    cosine_sample_hemisphere(z1, z2, w_in);
+    Onb onb(N);
+    onb.inverse_transform(w_in);
+
+    prd.direction = w_in;
+    prd.origin = P;
+    prd.attenuation *= rt_data->diffuseColor;
+    break;
+  }
+  case BSDFType::BSDF_METALLIC:
+  {
+
+    const float z1 = rnd(seed);
+    const float z2 = rnd(seed);
+    float3 microfacetNormal = sampleGGX(z1, z2, roughness, N);
+    float3 R = reflect(ray_dir, microfacetNormal); /// Refelction should have a random portion as well
+
+    prd.direction = R;
+    prd.origin = P + R * 1e-4f;
+
+
+    float3 eta = make_float3(1.45, 0.7, 1.55); // Slightly more refraction in the blue channel
+    float3 k = make_float3(3.0, 2.2, 3.5); // Higher absorption in the red and blue channels
+    float cosTheta = fmaxf(dot(microfacetNormal, -ray_dir), 0.0f);
+    float3 F = fresnelSchlickConductor(cosTheta, eta, k);
+    float3 F0 = rt_data->diffuseColor;
+    float3 color = F * F0;
+
+    prd.attenuation *= color;
+    break;
+
+  }
+  case BSDFType::BSDF_REFRACTION:
+  {
+
+    float3 incidentRayDir = normalize(ray_dir);
+
+    float cos_theta = dot(normalize(-ray_dir), N_0);
+    float F = FrDielectric(cos_theta, 1.0f, IOR);
+
+
+    if (rnd(seed) < F) {
+      prd.direction = reflect(incidentRayDir, N_0);
+
+    }
+    else {
+
+      float3 refractedDir; // Initialized by the refract function
+      bool didRefract = refract(refractedDir, incidentRayDir, N_0, IOR);
+      if (didRefract) {
+        prd.direction = refractedDir;
+      }
+      else {
+        prd.direction = reflect(incidentRayDir, N_0);
+      }
+    }
+    prd.origin = P + prd.direction * 1e-3f;
+    prd.attenuation *= rt_data->diffuseColor;
+    break;
+
+  }
   }
 
   const float z1 = rnd(seed);
   const float z2 = rnd(seed);
   prd.randomSeed = seed;
 
-  AreaLight light = params.areaLight;
   float weight = 0.01f;
-  if (useDirectLighting) 
+  AreaLight light = params.areaLight;
+  if (useDirectLighting)
   {
     weight = 0.0f;
+    //perturb the light position
     const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
 
     // Calculate properties of light sample (for area based pdf)
@@ -514,15 +702,9 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     const float  nDl = dot(N, L);
     const float  LnDl = -dot(light.normal, L);
 
-    if (nDl > 0.0f && LnDl > 0.0f)
-    {
-        const bool occluded =
-          traceOcclusion(
-            params.handle,
-            P,
-            L,
-            0.01f,           // tmin
-            Ldist - 0.01f);  // tmax
+        if (nDl > 0.0f && LnDl > 0.0f)
+        {
+          const bool occluded = traceOcclusion(params.handle,P,L,0.01f, Ldist - 0.01f);  
 
         if (!occluded)
         {
