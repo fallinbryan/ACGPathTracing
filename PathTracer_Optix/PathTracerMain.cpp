@@ -31,12 +31,13 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <algorithm>
 
 
 #include "TinyObjWrapper.h"
 #include "pathTracer.h"
 
-constexpr unsigned int maxiumumRecursionDepth = 16;
+constexpr unsigned int maxiumumRecursionDepth = 28;
 constexpr int32_t samples_per_launch = 32;
 
 //const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
@@ -48,8 +49,8 @@ sutil::Camera g_camera;
 
 
 
-int32_t width = 512;
-int32_t height = 512;
+int32_t width = 800;
+int32_t height = 800;
 
 template <typename T>
 struct SBTRecord {
@@ -104,6 +105,26 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
     else if (key == GLFW_KEY_0) {
       //toggle params.useDirectLighting
       params->useDirectLighting = !params->useDirectLighting;
+      std::cout << "Using Direct Lighting: " << (params->useDirectLighting ? "yes" : "no") << std::endl;
+      refreshAccumulationBuffer = true;
+    }
+    else if (key == GLFW_KEY_1) {
+      //toggle params.useImportanceSampling
+      params->useImportanceSampling = !params->useImportanceSampling;
+      std::cout << "Using Importance Sampling: " << (params->useImportanceSampling ? "yes" : "no") << std::endl;
+      refreshAccumulationBuffer = true;
+    }
+    else if (key == GLFW_KEY_UP) {
+      params->maxDepth = std::min((int)maxiumumRecursionDepth, (int)params->maxDepth + 1);
+      refreshAccumulationBuffer = true;
+      std::cout << "Max Depth: " << params->maxDepth << std::endl;
+    }
+    else if (key == GLFW_KEY_DOWN) {
+      params->maxDepth = std::max(1, (int)params->maxDepth - 1);
+      refreshAccumulationBuffer = true;
+      std::cout << "Max Depth: " << params->maxDepth << std::endl;
+    }
+    else if (key == GLFW_KEY_R) {
       refreshAccumulationBuffer = true;
     }
   }
@@ -124,8 +145,8 @@ void initializeTheLaunch(PathTracerState& state) {
   state.params.samplesPerPixel = samples_per_launch;
   state.params.currentFrameIdx = 0u;
 
-  state.params.areaLight.emission = make_float3(15.0f, 15.0f, 5.0f);
-  state.params.areaLight.corner = make_float3(343.0f, 548.0f, 227.0f);
+  state.params.areaLight.emission = make_float3(10.0f, 10.0f, 10.0f);
+  state.params.areaLight.corner = make_float3(343.0f, 547.0f, 227.0f);
   state.params.areaLight.v1 = make_float3(0.0f, 0.0f, 105.0f);
   state.params.areaLight.v2 = make_float3(-130.0f, 0.0f, 0.0f);
   state.params.areaLight.normal = normalize(cross(state.params.areaLight.v1, state.params.areaLight.v2));
@@ -443,7 +464,7 @@ void createProgramGroups(PathTracerState& state) {
     OptixProgramGroupDesc hitgroup_prog_group_desc = {};
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleCH = state.module;
-    hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__diffuse__ch";
 
     OPTIX_CHECK_LOG(optixProgramGroupCreate(
       state.context,
@@ -620,8 +641,11 @@ void main() {
     TinyObjWrapper obj(objfilepath);
 
     PathTracerState state;
-    state.params.width = 512;
-    state.params.height = 512;
+    state.params.width = width;
+    state.params.height = height;
+    state.params.useDirectLighting = false;
+    state.params.useImportanceSampling = false;
+    state.params.maxDepth = maxiumumRecursionDepth;
     sutil::CUDAOutputBufferType output_buffer_type = sutil::CUDAOutputBufferType::GL_INTEROP;
 
     try {
@@ -631,6 +655,10 @@ void main() {
       g_camera.setAspectRatio(static_cast<float>(state.params.width) / static_cast<float>(state.params.height));
       state.params.cameraEye = g_camera.eye();
       g_camera.UVWFrame(state.params.cameraU, state.params.cameraV, state.params.cameraW);
+
+
+      std::cout << "Using Direct Lighting: " << (state.params.useDirectLighting ? "yes" : "no") << std::endl;
+      std::cout << "Using Importance Sampling: " << (state.params.useImportanceSampling ? "yes" : "no") << std::endl;
 
       createDeviceContext(state);
       buildTheAccelarationStructure(state, obj);
@@ -664,13 +692,13 @@ void main() {
        {
           glfwPollEvents();
           updateState(output_buffer, state);
-          std::cout << "State Updated" << std::endl;
+          //std::cout << "State Updated" << std::endl;
           LaunchCurrentFrame(output_buffer, state);
-          std::cout << "Frame Launched" << std::endl;
+          //std::cout << "Frame Launched" << std::endl;
           showCurrentFrame(output_buffer, gl_display, window);
-          std::cout << "Frame Shown" << std::endl;
+          //std::cout << "Frame Shown" << std::endl;
           glfwSwapBuffers(window);
-          std::cout << "Buffers Swapped" << std::endl;
+          //std::cout << "Buffers Swapped" << std::endl;
           ++state.params.currentFrameIdx;
        } while (!glfwWindowShouldClose(window));
         CUDA_SYNC_CHECK();
