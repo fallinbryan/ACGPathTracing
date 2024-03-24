@@ -12,9 +12,9 @@ extern "C" {
   __constant__ PathTraceParams params;
 }
 
-struct Onb
+struct OrthonormalBasis
 {
-  __forceinline__ __device__ Onb(const float3& normal)
+  __forceinline__ __device__ OrthonormalBasis(const float3& normal)
   {
     m_normal = normal;
 
@@ -110,32 +110,99 @@ static __forceinline__ __device__ void storeMissRadiancePRD(RadiancePayloadRayDa
   optixSetPayload_18(prd.doneReason);
 }
 
-static __forceinline__ __device__ void cosine_sample_hemisphere(const float u1, const float u2, float3& p)
+static __forceinline__ __device__ float safeDivide(float a, float b)
 {
-  // Uniformly sample disk.
-  const float r = sqrtf(u1);
-  const float phi = 2.0f * M_PIf * u2;
+  return b == 0.0f ? 0.0f : a / b;
+}
+
+static __forceinline__ __device__ float3 safeDivide(float3 a, float b) {
+  return make_float3(safeDivide(a.x, b), safeDivide(a.y, b), safeDivide(a.z, b));
+
+}
+
+
+/**
+ * @brief Cosine-weighted importance sampling for a hemisphere.
+ *
+ * This function uses Monte Carlo integration to sample a direction within a hemisphere based on two random input values (u1 and u2).
+ * The generated direction is used in path tracing algorithms for light transport simulations.
+ * The direction is sampled based on the cosine of the angle between the direction and the normal of the hemisphere.
+ * This is an importance sampling method that generates directions that are more likely to be chosen based on the cosine of the angle.
+ * This helps to reduce the variance and produce a more accurate image.
+ *
+ * @param u1 A random float value between 0 and 1.
+ * @param u2 A random float value between 0 and 1.
+ * @param p The output sampled direction within the hemisphere.
+ */
+static __forceinline__ __device__ void jankun_cosine_sample_hemisphere(const float eta1, const float eta2, float3& p)
+{
+  // Transform eta1 and eta2 from [0, 1) to [-1, 1)
+  float eta1_prime = 2.0f * eta1 - 1.0f;
+  float eta2_prime = 2.0f * eta2 - 1.0f;
+
+  float r, phi;
+
+  // Determine r and phi using the safeDivide function to avoid division by zero
+  if (eta1 > eta2) {
+    r = eta1_prime;
+    phi = M_PIf / 4.0f * safeDivide(eta2_prime, eta1_prime);
+  }
+  else {
+    r = eta2_prime;
+    phi = M_PIf / 4.0f * safeDivide(eta1_prime, eta2_prime);
+  }
+
+  // Convert polar to Cartesian coordinates
   p.x = r * cosf(phi);
   p.y = r * sinf(phi);
 
-  // Project up to hemisphere.
-  p.z = sqrtf(fmaxf(0.0f, 1.0f - p.x * p.x - p.y * p.y));
+  // Adjust z based on the exact mathematics from the lecture
+  p.z = 1.0f - p.x * p.x - p.y * p.y; 
 }
 
-static __forceinline__ __device__ bool uniform_sphere_rejection_sample(const float u1, const float u2, const float u3, float3& p)
+
+static __forceinline__ __device__ void cosine_sample_hemisphere(const float eta1, const float eta2, float3& p)
 {
-  const float q = sqrtf(u1 * u1 + u2 * u2 + u3 * u3);
-  if (q > 1.0f)
-    return false;
-  else {
-    p.x = 2.0f * u1 * q;
-    p.y = 2.0f * u2 * q;
-    p.z = 2.0f * u3 * q;
 
-    return true;
-  
-  }
+  //The monte carlo probability that this direction was sampled is cos(theta) / PI
+  //The reflectance of the lambertian surface is R / PI
+
+  const float theta = acosf(sqrtf(eta1));
+  const float phi = 2.0f * M_PIf * eta2;
+  p.x = sinf(theta) * cosf(phi);
+  p.y = sinf(theta) * sinf(phi);
+  p.z = cosf(theta);
+
 }
+
+/**
+ * @brief Uniformly samples a direction within a hemisphere.
+ *
+ * This function uses Monte Carlo integration to uniformly sample a direction within a hemisphere.
+ * It generates a random direction within a hemisphere based on two random input values (u1 and u2).
+ * The generated direction is used in path tracing algorithms for light transport simulations.
+ * The direction is sampled uniformly, meaning each direction within the hemisphere has an equal chance of being chosen.
+ * This function is NOT an importance sampling method.
+ *
+ * @param u1 A random float value between 0 and 1.
+ * @param u2 A random float value between 0 and 1.
+ * @param wi The output sampled direction within the hemisphere.
+ */
+static __forceinline__ __device__ void uniform_sample_hemisphere(const float u1, const float u2, float3& wi) 
+{
+  
+  //The monte carlo probability that this direction was sampled is 2 / PI
+  //The reflectance of the lambertian surface is R / PI
+
+  const float theta = acosf(u1);
+  const float phi = 2.0f * M_PIf * u2;
+  wi.x =  cosf(phi) * sqrtf(1-u1*u1);
+  wi.y =  sinf(phi) * sqrtf(1-u1*u1);
+  wi.z =  u1;
+
+}
+
+
 
 static __forceinline__ __device__ const char* doneReasonToString(DoneReason reason)
 {
@@ -159,30 +226,8 @@ static __forceinline__ __device__ bool pixelIsNull(const float3& pixel)
   return pixel.x == 0.0f && pixel.y == 0.0f && pixel.z == 0.0f;
 }
 
-static __forceinline__ __device__ float safeDivide(float a, float b)
-{
-  return b == 0.0f ? 0.0f : a / b;
-}
 
-static __forceinline__ __device__ float3 safeDivide(float3 a, float b) {
-  return make_float3(safeDivide(a.x, b), safeDivide(a.y, b), safeDivide(a.z, b));
 
-}
-
-/**
- * @brief Traces a ray through the scene and updates the payload with the radiance information.
- *
- * This function uses the OptiX API to trace a ray through the scene and gather radiance information.
- * optixTraverse is used to trace the ray and optixInvoke is used to invoke the relavant shader.
- * The relvant shader will update the payload with the radiance and attenuation information.
- *
- * @param handle The handle to the traversable object (scene) to trace the ray through.
- * @param ray_origin The origin of the ray.
- * @param ray_direction The direction of the ray.
- * @param tmin The minimum t value for intersections.
- * @param tmax The maximum t value for intersections.
- * @param prd The payload to store the radiance information in.
- */
 
 // Sample GGX distribution for importance sampling
 static __forceinline__ __device__ float3 sampleGGX(float u1, float u2, float roughness, const float3& N)
@@ -287,6 +332,20 @@ __forceinline__ __device__ float geometricSmith(float NdotV, float NdotL, float 
   return ggxV * ggxL;
 }
 
+/**
+ * @brief Traces a ray through the scene and updates the payload with the radiance information.
+ *
+ * This function uses the OptiX API to trace a ray through the scene and gather radiance information.
+ * optixTraverse is used to trace the ray and optixInvoke is used to invoke the relavant shader.
+ * The relvant shader will update the payload with the radiance and attenuation information.
+ *
+ * @param handle The handle to the traversable object (scene) to trace the ray through.
+ * @param ray_origin The origin of the ray.
+ * @param ray_direction The direction of the ray.
+ * @param tmin The minimum t value for intersections.
+ * @param tmax The maximum t value for intersections.
+ * @param prd The payload to store the radiance information in.
+ */
 static __forceinline__ __device__ void traceRadiance(
   OptixTraversableHandle handle,
   float3                 ray_origin,
@@ -550,12 +609,6 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
 
-  const int    prim_idx = optixGetPrimitiveIndex();
-  const float3 ray_dir = optixGetWorldRayDirection();
-
-  const uint3  idx = rt_data->indices[prim_idx];
-  const bool useDirectLighting = params.useDirectLighting;
-  const bool useImportanceSampling = params.useImportanceSampling;
 
   const int       prim_idx = optixGetPrimitiveIndex();
   const float3    ray_dir = optixGetWorldRayDirection();
@@ -563,9 +616,10 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   const uint3     idx = rt_data->indices[prim_idx];
   const bool      useDirectLighting = params.useDirectLighting;
   const float     metallic = rt_data->metallic;
-  const float     roughness =  rt_data->roughness;
+  const float     roughness = 0.2; rt_data->roughness;
   const float     IOR = rt_data->IOR;
   const BSDFType  bsdfType = rt_data->bsdfType;
+  const bool      useImportanceSampling = params.useImportanceSampling;
 
 
   const float3 v0 = make_float3(rt_data->vertices[idx.x]);
@@ -593,41 +647,24 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   {
     const float z1 = rnd(seed);
     const float z2 = rnd(seed);
+    OrthonormalBasis onb(N);
     float3 w_in;
-    bool isRejected = false;
+
     if (useImportanceSampling)
     {
       cosine_sample_hemisphere(z1, z2, w_in);
-      Onb onb(N);
       onb.inverse_transform(w_in);
     }
     else
     {
-      float u1;
-      float u2;
-      float u3;
-      do {
-        u1 = rnd(seed);
-        u2 = rnd(seed);
-        u3 = rnd(seed);
-      } while (!uniform_sphere_rejection_sample(u1, u2, u3, w_in));
-      w_in += N;
-      normalize(w_in);
+      uniform_sample_hemisphere(z1, z2, w_in);
+      onb.inverse_transform(w_in);
     }
 
     prd.direction = w_in;
     prd.origin = P;
-
     prd.attenuation *= rt_data->diffuseColor;
     
-
-    cosine_sample_hemisphere(z1, z2, w_in);
-    Onb onb(N);
-    onb.inverse_transform(w_in);
-
-    prd.direction = w_in;
-    prd.origin = P;
-    prd.attenuation *= rt_data->diffuseColor;
     break;
   }
   case BSDFType::BSDF_METALLIC:
@@ -690,7 +727,19 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   float weight = 0.01f;
   AreaLight light = params.areaLight;
-  if (useDirectLighting)
+
+  if (length(rt_data->emissionColor) > 0.0f) {
+    prd.radiance = rt_data->emissionColor;
+    prd.done = true;
+    prd.doneReason = DoneReason::LIGHT_HIT;
+  }
+  else {
+    prd.radiance = make_float3(0.0f);
+    prd.done = false;
+  }
+
+
+  if (useDirectLighting && bsdfType != BSDFType::BSDF_REFRACTION)
   {
     weight = 0.0f;
     //perturb the light position
@@ -710,23 +759,11 @@ extern "C" __global__ void __closesthit__diffuse__ch()
         {
           const float A = length(cross(light.v1, light.v2));
           weight = nDl * LnDl * A / (M_PIf * Ldist * Ldist);
-          prd.radiance = light.emission * weight;
+          prd.radiance += light.emission * weight;
         }
       }                               
   }
-  else {
-    
-    if (length(rt_data->emissionColor) > 0.0f) {
-      prd.radiance = rt_data->emissionColor;
-      prd.done = true;
-      prd.doneReason = DoneReason::LIGHT_HIT;
-    }
-    else {
-        prd.radiance = make_float3(0.0f);
-        prd.done = false;
-      }
-    
-  }
+ 
 
 
   storeClosesthitRadiancePRD(prd);

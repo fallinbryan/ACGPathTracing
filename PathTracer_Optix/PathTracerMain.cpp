@@ -32,13 +32,17 @@
 #include <sstream>
 #include <string>
 #include <algorithm>
-
+#include  <chrono>
 
 #include "TinyObjWrapper.h"
 #include "pathTracer.h"
 
 constexpr unsigned int maxiumumRecursionDepth = 28;
-constexpr int32_t samples_per_launch = 32;
+constexpr int32_t samples_per_launch = 128;
+UINT32 frame_counter;
+UINT32 sample_summ;
+UINT32 avg_ms;
+UINT32 total_ms;
 
 //const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
 const std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj";
@@ -49,8 +53,8 @@ sutil::Camera g_camera;
 
 
 
-int32_t width = 800;
-int32_t height = 800;
+int32_t width = 1920;
+int32_t height = 1080;
 
 template <typename T>
 struct SBTRecord {
@@ -105,24 +109,24 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
     else if (key == GLFW_KEY_0) {
       //toggle params.useDirectLighting
       params->useDirectLighting = !params->useDirectLighting;
-      std::cout << "Using Direct Lighting: " << (params->useDirectLighting ? "yes" : "no") << std::endl;
+      std::cout << std::endl << "Using Direct Lighting: " << (params->useDirectLighting ? "yes" : "no") << std::endl;
       refreshAccumulationBuffer = true;
     }
     else if (key == GLFW_KEY_1) {
       //toggle params.useImportanceSampling
       params->useImportanceSampling = !params->useImportanceSampling;
-      std::cout << "Using Importance Sampling: " << (params->useImportanceSampling ? "yes" : "no") << std::endl;
+      std::cout << std::endl << "Using Importance Sampling: " << (params->useImportanceSampling ? "yes" : "no") << std::endl;
       refreshAccumulationBuffer = true;
     }
     else if (key == GLFW_KEY_UP) {
       params->maxDepth = std::min((int)maxiumumRecursionDepth, (int)params->maxDepth + 1);
       refreshAccumulationBuffer = true;
-      std::cout << "Max Depth: " << params->maxDepth << std::endl;
+      std::cout << std::endl << "Max Depth: " << params->maxDepth << std::endl;
     }
     else if (key == GLFW_KEY_DOWN) {
       params->maxDepth = std::max(1, (int)params->maxDepth - 1);
       refreshAccumulationBuffer = true;
-      std::cout << "Max Depth: " << params->maxDepth << std::endl;
+      std::cout << std::endl << "Max Depth: " << params->maxDepth << std::endl;
     }
     else if (key == GLFW_KEY_R) {
       refreshAccumulationBuffer = true;
@@ -164,6 +168,10 @@ void updateState(sutil::CUDAOutputBuffer<uchar4>& output_buffer, PathTracerState
   {
     refreshAccumulationBuffer = false;
     state.params.currentFrameIdx = 0;
+    sample_summ = 0;
+    frame_counter = 0;
+    avg_ms = 0;
+    total_ms = 0;
 
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(state.params.accumulationBuffer)));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state.params.accumulationBuffer), state.params.width * state.params.height * sizeof(float4)));
@@ -636,8 +644,7 @@ void CleanAllTheThings(PathTracerState& state) {
 } 
 
 void main() {
-    std::cout << "hello world" << std::endl;
-
+    
     TinyObjWrapper obj(objfilepath);
 
     PathTracerState state;
@@ -645,7 +652,7 @@ void main() {
     state.params.height = height;
     state.params.useDirectLighting = false;
     state.params.useImportanceSampling = false;
-    state.params.maxDepth = maxiumumRecursionDepth;
+    state.params.maxDepth = 4;
     sutil::CUDAOutputBufferType output_buffer_type = sutil::CUDAOutputBufferType::GL_INTEROP;
 
     try {
@@ -690,6 +697,9 @@ void main() {
         
        do
        {
+
+         auto start = std::chrono::high_resolution_clock::now();
+
           glfwPollEvents();
           updateState(output_buffer, state);
           //std::cout << "State Updated" << std::endl;
@@ -700,11 +710,32 @@ void main() {
           glfwSwapBuffers(window);
           //std::cout << "Buffers Swapped" << std::endl;
           ++state.params.currentFrameIdx;
+
+          auto end = std::chrono::high_resolution_clock::now();
+          auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+          avg_ms += duration.count();
+          total_ms += duration.count();
+
+
+          sample_summ += samples_per_launch;
+          frame_counter++;
+
+          std::cout << "\rFrame Render Time: " << duration.count() << "ms" << std::flush;
+   
+          
+
        } while (!glfwWindowShouldClose(window));
         CUDA_SYNC_CHECK();
       }
       sutil::cleanupUI(window);
       CleanAllTheThings(state);
+      if (frame_counter > 0)
+        avg_ms /= frame_counter;
+
+      std::cout << "Total Samples " << sample_summ << std::endl;
+      std::cout << "Average ms per frame: " << avg_ms << std::endl;
+      std::cout << "Total ms: " << total_ms << std::endl;
     }
     catch (const std::exception& e) {
         std::cerr << "Caught exception: " << e.what() << std::endl;
