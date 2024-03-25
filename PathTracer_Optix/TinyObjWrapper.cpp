@@ -10,12 +10,30 @@
 #include <numeric>
 
 
-
+/**
+ * @brief Constructor for the TinyObjWrapper class that takes a filename as an argument.
+ *
+ * This constructor calls the loadFile method to load the .obj file specified by the filename.
+ * If the file is successfully loaded, the constructor will also update the vertices, materials, material indices, and index buffer.
+ *
+ * @param filename The name of the .obj file to load.
+ */
 TinyObjWrapper::TinyObjWrapper(const std::string& filename)
 {
   loadFile(filename);
 }
 
+
+/**
+ * @brief Loads an .obj file and updates the vertices, materials, material indices, and index buffer.
+ *
+ * This method uses the tinyobj library to parse the .obj file specified by the filename.
+ * If the file is successfully parsed, the method will update the vertices, materials, material indices, and index buffer.
+ * The method also sets the triangulate and vertex_color options of the reader_config to true and false, respectively.
+ *
+ * @param filename The name of the .obj file to load.
+ * @return A boolean indicating whether the file was successfully loaded.
+ */
 
 bool TinyObjWrapper::loadFile(const std::string& filename)
 {
@@ -47,35 +65,76 @@ bool TinyObjWrapper::loadFile(const std::string& filename)
   return ret;
 }
 
+/**
+ * @brief Returns the vertices of the 3D model as a vector of floats.
+ *
+ * This method returns the _vertices member variable, which is updated by the loadFile method.
+ * Each vertex is represented by four floats (x, y, z, w), where w is always 1.0.
+ *
+ * @return A vector of floats representing the vertices of the 3D model.
+ */
 std::vector<float> TinyObjWrapper::getVerticesFloat() const
 {
   return _vertices;
 }
 
+/**
+ * @brief Returns the materials of the 3D model as a vector of Material structs.
+ *
+ * This method returns the _materials member variable, which is updated by the loadFile method.
+ *
+ * @return A vector of Material structs representing the materials of the 3D model.
+ */
 std::vector<Material> TinyObjWrapper::getMaterials() const
 {
 
   return _materials;
 }
 
+/**
+ * @brief Returns the material indices of the 3D model as a vector of uint32_t.
+ *
+ * This method returns the _materialIndices member variable, which is updated by the loadFile method.
+ *
+ * @return A vector of uint32_t representing the material indices of the 3D model.
+ */
 std::vector<uint32_t> TinyObjWrapper::getMaterialIndices() const
 {
 
   return _materialIndices;
 }
 
+/**
+ * @brief Returns the number of materials of the 3D model.
+ *
+ * This method returns the size of the _materials member variable, which is updated by the loadFile method.
+ *
+ * @return The number of materials of the 3D model.
+ */
 size_t TinyObjWrapper::getNumMaterials() const
 {
   return _materials.size();
 }
 
 
+/**
+ * @brief Returns the index buffer of the 3D model as a vector of uint32_t.
+ *
+ * This method returns the _indexBuffer member variable, which is updated by the loadFile method.
+ *
+ * @return A vector of uint32_t representing the index buffer of the 3D model.
+ */
 std::vector<uint32_t> TinyObjWrapper::getIndexBuffer() const
 {
   return _indexBuffer;
 }
 
-
+/**
+ * @brief Updates the materials associated with the 3D model.
+ *
+ * This method updates the _materials member variable by iterating over the materials returned by the tinyobj library.
+ * Each material is converted to a Material struct and added to the _materials vector.
+ */
 void TinyObjWrapper::_updateMaterials()
 {
   auto& materials = reader.GetMaterials();
@@ -109,6 +168,12 @@ void TinyObjWrapper::_updateMaterials()
   
 }
 
+/**
+ * @brief Updates the material indices associated with the 3D model.
+ *
+ * This method updates the _materialIndices member variable by iterating over the shapes returned by the tinyobj library.
+ * Each shape contains a mesh with material_ids, which are added to the _materialIndices vector.
+ */
 void TinyObjWrapper::_updateMaterialIndices()
 {
   auto& shapes = reader.GetShapes();
@@ -126,6 +191,12 @@ void TinyObjWrapper::_updateMaterialIndices()
   _materialIndices = materialIndices;
 }
 
+/**
+ * @brief Updates the vertices associated with the 3D model.
+ *
+ * This method updates the _vertices member variable by iterating over the vertices returned by the tinyobj library.
+ * Each vertex is represented by four floats (x, y, z, w), where w is always 1.0.
+ */
 void TinyObjWrapper::_updateVertices()
 {
   auto& attrib = reader.GetAttrib();
@@ -149,6 +220,12 @@ void TinyObjWrapper::_updateVertices()
   
 }
 
+/**
+ * @brief Updates the index buffer associated with the 3D model.
+ *
+ * This method updates the _indexBuffer member variable by iterating over the shapes returned by the tinyobj library.
+ * Each shape contains a mesh with indices, which are added to the _indexBuffer vector.
+ */
 void TinyObjWrapper::_updateIndexBuffer()
 {
   auto& shapes = reader.GetShapes();

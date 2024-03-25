@@ -37,6 +37,8 @@
 #include "TinyObjWrapper.h"
 #include "pathTracer.h"
 
+
+/*TODO: Load these parameters either from a config file or command line.  Possbly even could make a UI to set them at runtime*/
 constexpr unsigned int maxiumumRecursionDepth = 28;
 constexpr int32_t samples_per_launch = 128;
 UINT32 frame_counter;
@@ -44,7 +46,7 @@ UINT32 sample_summ;
 UINT32 avg_ms;
 UINT32 total_ms;
 
-//const std::string objfilepath = "C:\\Users\\falli\\Projects\\lib\\tinyobjloader\\models\\cornell_box.obj";
+
 const std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj";
 
 bool refreshAccumulationBuffer = false;
@@ -107,13 +109,13 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
       glfwSetWindowShouldClose(window, true);
     }
     else if (key == GLFW_KEY_0) {
-      //toggle params.useDirectLighting
+
       params->useDirectLighting = !params->useDirectLighting;
       std::cout << std::endl << "Using Direct Lighting: " << (params->useDirectLighting ? "yes" : "no") << std::endl;
       refreshAccumulationBuffer = true;
     }
     else if (key == GLFW_KEY_1) {
-      //toggle params.useImportanceSampling
+
       params->useImportanceSampling = !params->useImportanceSampling;
       std::cout << std::endl << "Using Importance Sampling: " << (params->useImportanceSampling ? "yes" : "no") << std::endl;
       refreshAccumulationBuffer = true;
@@ -702,13 +704,13 @@ void main() {
 
           glfwPollEvents();
           updateState(output_buffer, state);
-          //std::cout << "State Updated" << std::endl;
+
           LaunchCurrentFrame(output_buffer, state);
-          //std::cout << "Frame Launched" << std::endl;
+
           showCurrentFrame(output_buffer, gl_display, window);
-          //std::cout << "Frame Shown" << std::endl;
+
           glfwSwapBuffers(window);
-          //std::cout << "Buffers Swapped" << std::endl;
+
           ++state.params.currentFrameIdx;
 
           auto end = std::chrono::high_resolution_clock::now();
