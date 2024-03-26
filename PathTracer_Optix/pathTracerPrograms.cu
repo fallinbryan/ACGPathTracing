@@ -109,7 +109,7 @@ struct OrthonormalBasis
  * // Use `prd` to continue shading calculations...
  * ```
  *
- * Note: This function is provided as part of the NVIDIA OptiX Toolkit and is used without modification.
+ * Note: This function is provided as part of the NVIDIA OptiX Toolkit and is used with slight modification, adding the doneReason to the payload for debugging.
  */
 static __forceinline__ __device__ RadiancePayloadRayData loadClosesthitRadiancePRD()
 {
@@ -412,7 +412,7 @@ static __forceinline__ __device__ const char* doneReasonToString(DoneReason reas
 /**
  * @brief Checks for "void pixels," where a GPU's silent contemplation on division by zero leaves behind a colorless void.
  *
- * This function handles those special moments, marking the presence of what we've affectionately dubbed "void pixels." These are the enigmatic outcomes of calculations that tread into the realm where traditional mathematics would rather not, leaving us with pixels devoid of all RGB values—quiet testimonies to a computational anomaly.
+ * This function handles those special moments, marking the presence of what we've affectionately dubbed "void pixels." These are the enigmatic outcomes of calculations that tread into the realm where traditional mathematics would rather not, leaving us with pixels devoid of all RGB valuesï¿½quiet testimonies to a computational anomaly.
  *
  * A void pixel is defined by its RGB components all resting peacefully at 0.0f. While the term itself might not be found in standard graphics programming lexicons, it's a concise encapsulation of those peculiar instances we occasionally encounter in the digital wilderness.
  *

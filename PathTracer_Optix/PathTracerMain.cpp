@@ -55,8 +55,8 @@ sutil::Camera g_camera;
 
 
 
-int32_t width = 1920;
-int32_t height = 1080;
+int32_t width = 512;
+int32_t height = 512;
 
 template <typename T>
 struct SBTRecord {
