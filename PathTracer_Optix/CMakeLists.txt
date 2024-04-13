@@ -26,15 +26,34 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-OPTIX_add_sample_executable( optixPathTracer target_name
+OPTIX_add_sample_executable(optixPathTracer target_name
   pathTracerPrograms.cu
   PathTracerMain.cpp
   pathTracer.h
   TinyObjWrapper.h
   TinyObjWrapper.cpp
+  ConfigReader.h
+  ConfigReader.cpp
   OPTIONS -rdc true
-  )
+)
 
-target_link_libraries( ${target_name}
+target_link_libraries(${target_name}
   ${CUDA_LIBRARIES}
-  )
+)
+
+# Copy AppConfig.cfg to the output directory after building the target
+add_custom_command(
+    TARGET ${target_name} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/AppConfig.cfg
+            $<TARGET_FILE_DIR:${target_name}>
+    COMMENT "Copying AppConfig.cfg to output directory"
+)
+
+# Visual Studio integration for AppConfig.cfg
+set(APPCONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/AppConfig.cfg)
+source_group("Resources" FILES ${APPCONFIG_FILE})
+add_custom_target(AppConfigResource ALL
+    SOURCES ${APPCONFIG_FILE}
+    COMMENT "Adding AppConfig.cfg to Visual Studio Solution Explorer under Resources"
+)

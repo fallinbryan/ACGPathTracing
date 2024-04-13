@@ -35,19 +35,25 @@
 #include  <chrono>
 
 #include "TinyObjWrapper.h"
+#include "ConfigReader.h"
 #include "pathTracer.h"
 
 
 /*TODO: Load these parameters either from a config file or command line.  Possbly even could make a UI to set them at runtime*/
-constexpr unsigned int maxiumumRecursionDepth = 28;
-constexpr int32_t samples_per_launch = 128;
+
+std::string CONFIG_FILE = "AppConfig.cfg";
+
+unsigned int maxiumumRecursionDepth = 28;
+int32_t samples_per_launch = 128;
 UINT32 frame_counter;
 UINT32 sample_summ;
 UINT32 avg_ms;
 UINT32 total_ms;
 
+float refractiveRoughnessOffset = 0.0f;
+float metallicRoughnessOffset = 0.0f;
 
-const std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj";
+std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj";
 
 bool refreshAccumulationBuffer = false;
 
@@ -133,10 +139,36 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
     else if (key == GLFW_KEY_R) {
       refreshAccumulationBuffer = true;
     }
-  }
-  else if (key == GLFW_KEY_G)
-  {
-    // toggle UI draw
+    else if (key == GLFW_KEY_Z)
+    {
+      float roughness = params->refractiveRoughness;
+      float offset = roughness > 0.0f ? -0.01f : 0.0f;
+      params->refractiveRoughness += offset;
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Refractive Roughness: " << params->refractiveRoughness << std::endl;
+    }
+    else if (key == GLFW_KEY_X) {
+      float roughness = params->refractiveRoughness;
+      float offset = roughness < 1.0f ? 0.01f : 0.0;
+      params->refractiveRoughness += offset;
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Refractive Roughness: " << params->refractiveRoughness << std::endl;
+    }
+    else if (key == GLFW_KEY_C) {
+      float roughness = params->metallicRoughness;
+      float offset = roughness > 0.0f ? -0.01f : 0.0f;
+      params->metallicRoughness += offset;
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Metallic Roughness: " << params->metallicRoughness << std::endl;
+    }
+    else if (key == GLFW_KEY_V) {
+      float roughness = params->metallicRoughness;
+      float offset = roughness < 1.0f ? 0.01f : 0.0;
+      params->metallicRoughness += offset;
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Metallic Roughness: " << params->metallicRoughness << std::endl;
+    }
+
   }
 }
 
@@ -157,6 +189,8 @@ void initializeTheLaunch(PathTracerState& state) {
   state.params.areaLight.v2 = make_float3(-130.0f, 0.0f, 0.0f);
   state.params.areaLight.normal = normalize(cross(state.params.areaLight.v1, state.params.areaLight.v2));
   state.params.handle = state.gas_handle;
+  state.params.refractiveRoughness = refractiveRoughnessOffset;
+  state.params.metallicRoughness = metallicRoughnessOffset;
 
   CUDA_CHECK( cudaStreamCreate( &state.stream ) );
   CUDA_CHECK( cudaMalloc( reinterpret_cast<void**>( &state.d_params ), sizeof( PathTraceParams ) ) );
@@ -646,6 +680,14 @@ void CleanAllTheThings(PathTracerState& state) {
 } 
 
 void main() {
+
+    ConfigReader config(CONFIG_FILE);
+
+    height = config.getInt("OUTPUT HEIGHT");
+    width = config.getInt("OUTPUT WIDTH");
+    objfilepath = config.getString("INPUT OBJ FILE");
+    maxiumumRecursionDepth = config.getInt("MAXIMUM RECRUSION DEPTH");
+    samples_per_launch = config.getInt("SAMPLES PER PIXEL");
     
     TinyObjWrapper obj(objfilepath);
 

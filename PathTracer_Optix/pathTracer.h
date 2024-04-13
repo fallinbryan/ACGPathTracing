@@ -104,6 +104,9 @@ struct PathTraceParams {
   bool useDirectLighting;
   bool useImportanceSampling;
 
+  float refractiveRoughness;
+  float metallicRoughness;
+
 
 };
 

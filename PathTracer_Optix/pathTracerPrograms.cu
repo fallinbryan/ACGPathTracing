@@ -876,11 +876,14 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   const uint3     idx = rt_data->indices[prim_idx];
   const bool      useDirectLighting = params.useDirectLighting;
-  const float     metallic = rt_data->metallic;
-  const float     roughness = 0.2; rt_data->roughness;
+  const bool      useImportanceSampling = params.useImportanceSampling;
+  const float     metalRoughOffset = params.metallicRoughness;
+  const float     refractRoughOffset = params.refractiveRoughness;
+  const float     metallic = rt_data->metallic; 
+        float     roughness = rt_data->roughness;
   const float     IOR = rt_data->IOR;
   const BSDFType  bsdfType = rt_data->bsdfType;
-  const bool      useImportanceSampling = params.useImportanceSampling;
+
 
 
   const float3 v0 = make_float3(rt_data->vertices[idx.x]);
@@ -930,7 +933,8 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   }
   case BSDFType::BSDF_METALLIC:
   {
-
+    roughness += metalRoughOffset;
+    clamp(roughness, 0.001f, 1.0f);
     const float z1 = rnd(seed);
     const float z2 = rnd(seed);
     float3 microfacetNormal = sampleGGX(z1, z2, roughness, N);
@@ -953,26 +957,33 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   }
   case BSDFType::BSDF_REFRACTION:
   {
+    const float z1 = rnd(seed);
+    const float z2 = rnd(seed);
+
+    roughness += refractRoughOffset;
+    clamp(roughness, 0.001f, 1.0f);
 
     float3 incidentRayDir = normalize(ray_dir);
 
-    float cos_theta = dot(normalize(-ray_dir), N_0); // using N_0 instead of N becaue N always faces the direction of the incident ray
+    float3 microFacetNormal =  sampleGGX(z1, z2, roughness, N_0);
+
+    float cos_theta = dot(-incidentRayDir, microFacetNormal);
     float F = FrDielectric(cos_theta, 1.0f, IOR);
 
 
     if (rnd(seed) < F) {
-      prd.direction = reflect(incidentRayDir, N_0);
+      prd.direction = reflect(incidentRayDir, microFacetNormal);
 
     }
     else {
 
       float3 refractedDir; // Initialized by the refract function
-      bool didRefract = refract(refractedDir, incidentRayDir, N_0, IOR);
+      bool didRefract = refract(refractedDir, incidentRayDir, microFacetNormal, IOR);
       if (didRefract) {
         prd.direction = refractedDir;
       }
       else {
-        prd.direction = reflect(incidentRayDir, N_0);
+        prd.direction = reflect(incidentRayDir, microFacetNormal);
       }
     }
     prd.origin = P + prd.direction * 1e-3f;

@@ -80,7 +80,7 @@
 # This enforces a particular version of CMake that we require to process the script files
 # properly.  We rely on VERSION_GREATER_EQUAL which requires CMake v. 3.7.
 cmake_minimum_required(VERSION 3.7 FATAL_ERROR)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -454,6 +454,7 @@ macro(OPTIX_add_source_groups)
   source_group("CUDA Files" REGULAR_EXPRESSION ".+\\.cu$")
 endmacro()
 
+
 #########################################################
 # OPTIX_add_sample_executable
 #
@@ -549,9 +550,19 @@ add_subdirectory(sutil)
 # Third-party support libraries.
 add_subdirectory(support)
 
+
+
+# Copy AppConfig.cfg from the root directory to the PathTracer_Optix directory
+configure_file(${CMAKE_SOURCE_DIR}/AppConfig.cfg ${CMAKE_SOURCE_DIR}/PathTracer_Optix/AppConfig.cfg COPYONLY)
+
+
+
+
 #################################################################
 
 # Now that everything is done, indicate that we have finished configuring at least once.
 # We use this variable to set certain defaults only on the first pass, so that we don't
 # continually set them over and over again.
 set(PASSED_FIRST_CONFIGURE ON CACHE INTERNAL "Already Configured once?")
+
+
