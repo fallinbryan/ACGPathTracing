@@ -1,4 +1,4 @@
-# Path Tracing Renderer - Advanced Computer Graphics at Mississppi State University - Assignment 3
+# Path Tracing Renderer - Advanced Computer Graphics at Mississppi State University - Assignment 4
 
 ## Overview
 
@@ -14,8 +14,21 @@ The renderer supports several modes of operation, allowing users to experiment w
 
 - **Bounce Control**: Adjusts the maximum number of bounces for rays, enabling users to balance between render quality and performance.
 
-## Modes of Operation
+### Added Features
 
+- **Rough Metal BRDF**
+- **Rough Dieltric BRDF**
+
+
+  ![Rough Metal](RoughMetal.png)
+
+
+  ![Rough Dielectric](RoughDielectric.png)
+
+## Modes of Operation
+**Metallic Roughness** Adjust the metallic roughness with the `c` and `v` keys.  `v` increases the roughness, `c` decreases it.
+
+**Dielectric Roughness** Adjust the dieltric roughness with the `z` and `x` keys.  `x` increases the roughness, `z` decreases it.
 
   **Importance Sampling Toggle**: Press the `1` key to toggle importance sampling on or off.
   
