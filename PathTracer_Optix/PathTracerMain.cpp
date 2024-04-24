@@ -103,14 +103,33 @@ float3 tinyobjToFloat3(const tinyobj::real_t* v)
   return make_float3(v[0], v[1], v[2]);
 }
 
+std::string float3ToString(float3 f) {
+  std::stringstream ss;
+  ss << "[" << f.x << "," << f.y << "," << f.z << "]";
+  return ss.str();
+}
+
+void printFloat3(float3 f) {
+  std::cout << float3ToString(f) << std::endl;
+}
+
+float3 translateCamera(float3 translation, PathTraceParams* params) {
+  g_camera.setEye(g_camera.eye() + translation);
+  params->cameraEye = g_camera.eye();
+  return g_camera.eye();
+}
+
+
 static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
 {
+
+  float stepSize = 0.05f;
 
   PathTraceParams* params = static_cast<PathTraceParams*>(glfwGetWindowUserPointer(window));
 
   if (action == GLFW_PRESS)
   {
-    if (key == GLFW_KEY_Q || key == GLFW_KEY_ESCAPE)
+    if (key == GLFW_KEY_ESCAPE)
     {
       glfwSetWindowShouldClose(window, true);
     }
@@ -169,8 +188,50 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
       std::cout << std::endl << "Metallic Roughness: " << params->metallicRoughness << std::endl;
     }
 
+    else if (key == GLFW_KEY_W) {
+      float3 translation = make_float3(0.0f, 0.0f, stepSize);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: "<< float3ToString(cam_pos) << std::endl;
+
+    }
+    else if (key == GLFW_KEY_A) {
+      float3 translation = make_float3(stepSize, 0.0f, 0.0f);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: " << float3ToString(cam_pos) << std::endl;
+    }
+    else if (key == GLFW_KEY_S) {
+      float3 translation = make_float3(0.0f, 0.0f, -stepSize);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: " << float3ToString(cam_pos) << std::endl;
+    }
+    else if (key == GLFW_KEY_D) {
+      float3 translation = make_float3(-stepSize, 0.0f, 0.0f);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: " << float3ToString(cam_pos) << std::endl;
+    }
+    else if (key == GLFW_KEY_Q) {
+      float3 translation = make_float3(0.0f, stepSize, 0.0f);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: " << float3ToString(cam_pos) << std::endl;
+    }
+    else if (key == GLFW_KEY_E) {
+      float3 translation = make_float3(0.0f, -stepSize, 0.0f);
+      float3 cam_pos = translateCamera(translation, params);
+      refreshAccumulationBuffer = true;
+      std::cout << std::endl << "Camera Translation: " << float3ToString(cam_pos) << std::endl;
+    }
+
+
+
   }
 }
+
+
 
 void initializeTheLaunch(PathTracerState& state) { 
   
