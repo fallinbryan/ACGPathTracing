@@ -8,6 +8,72 @@
 #include <vector>
 #include <cstdint>
 #include <numeric>
+#include <optix_types.h>
+#include <algorithm>
+
+enum class VectorIDX
+{
+  X = 0,
+  Y = 1,
+  Z = 2
+};
+
+float getValFromFloat3(VectorIDX idx, const float3& v)
+{
+  switch (idx)
+  {
+  case VectorIDX::X:
+    return v.x;
+    break;
+  case VectorIDX::Y:
+    return v.y;
+    break;
+  case VectorIDX::Z:
+    return v.z;
+    break;
+  default:
+    throw std::runtime_error("Invalid VectorIDX");
+    break;
+  }
+}
+
+float getMin(VectorIDX idx, const std::vector<float3>& vertices)
+{
+  float min = std::numeric_limits<float>::max();
+
+  for (auto& v : vertices)
+  {
+    float val = getValFromFloat3(idx, v);
+    min = std::min(min, val);
+  }
+  return min;
+}
+
+float getMax(VectorIDX idx, const std::vector<float3>& vertices)
+{
+  float max = std::numeric_limits<float>::min();
+
+  for (auto& v : vertices)
+  {
+    float val = getValFromFloat3(idx, v);
+    max = std::max(max, val);
+  }
+  return max;
+}
+
+OptixAabb GetAABBFromVerts(const std::vector<float3>& vertices)
+{
+  
+  OptixAabb aabb;
+  aabb.maxX = getMax(VectorIDX::X, vertices);
+  aabb.maxY = getMax(VectorIDX::Y, vertices);
+  aabb.maxZ = getMax(VectorIDX::Z, vertices);
+  aabb.minX = getMin(VectorIDX::X, vertices);
+  aabb.minY = getMin(VectorIDX::Y, vertices);
+  aabb.minZ = getMin(VectorIDX::Z, vertices);
+  return aabb;
+}
+
 
 
 /**
@@ -59,6 +125,7 @@ bool TinyObjWrapper::loadFile(const std::string& filename)
     _updateMaterials();
     _updateMaterialIndices();
     _updateIndexBuffer();
+    _updateAabbs();
 
   }
 
@@ -249,3 +316,27 @@ void TinyObjWrapper::_updateIndexBuffer()
   _indexBuffer = indexBuffer;
 }
 
+
+std::vector<OptixAabb> TinyObjWrapper::getAabbs() const
+{
+  return _aabbs;
+}
+
+void TinyObjWrapper::_updateAabbs() {
+    auto& shapes = reader.GetShapes();
+    std::vector<OptixAabb> aabbs;
+    if (dataLoaded)
+    {
+      for (auto& shape : shapes)
+      {
+        std::vector<float3> vertices;
+        for (auto& index : shape.mesh.indices)
+        {
+          float3 v = {reader.GetAttrib().vertices[index.vertex_index * 3], reader.GetAttrib().vertices[index.vertex_index * 3 + 1], reader.GetAttrib().vertices[index.vertex_index * 3 + 2]};
+          vertices.push_back(v);
+        }
+        aabbs.push_back(GetAABBFromVerts(vertices));
+      }
+    }
+  _aabbs = aabbs;
+}

@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <vector_types.h>
+#include <optix.h>
 
 struct Vertex {
   float x, y, z;// , padding;
@@ -91,6 +92,7 @@ class TinyObjWrapper
     std::vector<Material> getMaterials() const;
     std::vector<uint32_t> getMaterialIndices() const;
     std::vector<uint32_t> getIndexBuffer() const;
+    std::vector<OptixAabb> getAabbs() const;
 
     size_t getNumMaterials() const;
 
@@ -105,9 +107,12 @@ private:
   std::vector<uint32_t> _materialIndices;
   std::vector<uint32_t> _indexBuffer;
 
+  std::vector<OptixAabb> _aabbs;
+
   void _updateVertices();
   void _updateMaterials();
   void _updateMaterialIndices();
   void _updateIndexBuffer();
+  void _updateAabbs();
 
 };
