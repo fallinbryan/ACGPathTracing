@@ -159,6 +159,12 @@ void TinyObjWrapper::_updateMaterials()
       mat.bsdfType = BSDFType::BSDF_METALLIC;
     }
     else
+    if (m.name.find("Volume") != std::string::npos)
+    {
+      mat.bsdfType = BSDFType::BSDF_VOLUME;
+      mat.volumeDensity = m.roughness;
+    }
+    else
     {
       mat.bsdfType = BSDFType::BSDF_DIFFUSE;
     }

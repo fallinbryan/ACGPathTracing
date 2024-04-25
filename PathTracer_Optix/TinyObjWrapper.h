@@ -28,11 +28,13 @@ enum BSDFType {
   BSDF_DIFFUSE,
   BSDF_METALLIC,
   BSDF_REFRACTION,
+  BSDF_VOLUME,
 };
 
 struct Material {
   float3 diffuse;
   float3 emission;
+  float volumeDensity;
   float roughness;
   float metallic;
   float ior;
