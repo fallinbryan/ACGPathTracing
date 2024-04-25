@@ -105,7 +105,7 @@ float3 tinyobjToFloat3(const tinyobj::real_t* v)
 
 std::string float3ToString(float3 f) {
   std::stringstream ss;
-  ss << "[" << f.x << "," << f.y << "," << f.z << "]";
+  ss << "[" << f.x << "f," << f.y << "f," << f.z << "f]";
   return ss.str();
 }
 
@@ -123,7 +123,7 @@ float3 translateCamera(float3 translation, PathTraceParams* params) {
 static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
 {
 
-  float stepSize = 0.05f;
+  float stepSize = .105f;
 
   PathTraceParams* params = static_cast<PathTraceParams*>(glfwGetWindowUserPointer(window));
 
@@ -321,7 +321,7 @@ void showCurrentFrame(sutil::CUDAOutputBuffer<uchar4>& output_buffer, sutil::GLD
 }
 
 void initCamera() {
-  g_camera.setEye(make_float3(278.0f, 273.0f, -900.0f));
+  g_camera.setEye(make_float3(276.37f, 274.42f, 163.224f));
   g_camera.setLookat(make_float3(278.0f, 273.0f, 330.0f));
   g_camera.setUp(make_float3(0.0f, 1.0f, 0.0f));
   g_camera.setFovY(35.0f);
@@ -755,8 +755,8 @@ void main() {
     PathTracerState state;
     state.params.width = width;
     state.params.height = height;
-    state.params.useDirectLighting = false;
-    state.params.useImportanceSampling = false;
+    state.params.useDirectLighting = true;
+    state.params.useImportanceSampling = true;
     state.params.maxDepth = 4;
     sutil::CUDAOutputBufferType output_buffer_type = sutil::CUDAOutputBufferType::GL_INTEROP;
 
