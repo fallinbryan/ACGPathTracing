@@ -558,7 +558,94 @@ static __forceinline__ __device__ float FrDielectric(float cosThetaI, float etaI
   return (rParl * rParl + rPerp * rPerp) / 2.0f;
 }
 
+static __forceinline__ __device__ void ShadeDiffuse(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal) {
+  unsigned int seed = prd.randomSeed;
+  const bool      useImportanceSampling = params.useImportanceSampling;
+  const float z1 = rnd(seed);
+  const float z2 = rnd(seed);
+  OrthonormalBasis onb(normal);
+  float3 w_in;
 
+  if (useImportanceSampling)
+  {
+    cosine_sample_hemisphere(z1, z2, w_in);
+    onb.inverse_transform(w_in);
+  }
+  else
+  {
+    uniform_sample_hemisphere(z1, z2, w_in);
+    onb.inverse_transform(w_in);
+  }
+
+  prd.direction = w_in;
+  prd.origin = hitPoint;
+  prd.attenuation *= rt_data->diffuseColor;
+}
+
+static __forceinline__ __device__ void ShadeMetallic(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir)
+{
+  const float     metalRoughOffset = params.metallicRoughness;
+  unsigned int    seed = prd.randomSeed;
+  float           roughness = rt_data->roughness;
+  roughness += metalRoughOffset;
+  clamp(roughness, 0.001f, 1.0f);
+
+  const float z1 = rnd(seed);
+  const float z2 = rnd(seed);
+  float3 microfacetNormal = sampleGGX(z1, z2, roughness, normal);
+  float3 R = reflect(ray_dir, microfacetNormal);
+
+  prd.direction = R;
+  prd.origin = hitPoint + R * 1e-4f;
+
+
+  float3 eta = make_float3(1.45, 0.7, 1.55); // Slightly more refraction in the blue channel
+  float3 k = make_float3(3.0, 2.2, 3.5); // Higher absorption in the red and blue channels
+  float cosTheta = fmaxf(dot(microfacetNormal, -ray_dir), 0.0f);
+  float3 F = fresnelSchlickConductor(cosTheta, eta, k);
+  float3 F0 = rt_data->diffuseColor; // The base color of the material
+  float3 color = F * F0;
+
+  prd.attenuation *= color;
+}
+
+static __forceinline__ __device__ void ShadeDielectric(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) {  
+  const float     refractRoughOffset = params.refractiveRoughness;
+  unsigned int    seed = prd.randomSeed;
+  const float     z1 = rnd(seed);
+  const float     z2 = rnd(seed);
+  float           roughness = rt_data->roughness;
+  const float     IOR = rt_data->IOR;
+
+  roughness += refractRoughOffset;
+  clamp(roughness, 0.001f, 1.0f);
+
+  float3 incidentRayDir = normalize(ray_dir);
+
+  float3 microFacetNormal = sampleGGX(z1, z2, roughness, normal);
+
+  float cos_theta = dot(-incidentRayDir, microFacetNormal);
+  float F = FrDielectric(cos_theta, 1.0f, IOR);
+
+
+  if (rnd(seed) < F) {
+    prd.direction = reflect(incidentRayDir, microFacetNormal);
+
+  }
+  else {
+
+    float3 refractedDir; // Initialized by the refract function
+    bool didRefract = refract(refractedDir, incidentRayDir, microFacetNormal, IOR);
+    if (didRefract) {
+      prd.direction = refractedDir;
+    }
+    else {
+      prd.direction = reflect(incidentRayDir, microFacetNormal);
+    }
+  }
+  prd.origin = hitPoint + prd.direction * 1e-3f;
+  prd.attenuation *= rt_data->diffuseColor;
+}
 
 /**
  * @brief Traces a ray through the scene and updates the payload with the radiance information.
@@ -846,7 +933,22 @@ extern "C" __global__ void __miss__ms()
   storeMissRadiancePRD(prd);
 }
 
+extern "C" __global__ void __volume_miss__ms()
+{
+  // we expect most volume rays to miss geometry because they are ray marching through the volume
+  // assume the end of the ray is inside the volume, this miss shader is being called at time step t
+  // here is where we would accumulate the volume's emission and scattering properties
 
+  // Sample to the volume at the current position and accumulate the volume's emission and scattering properties
+  
+}
+
+extern "C" __global__ void __closesthit__volume__ch() {
+  // we are inside the volume and we hit something. 
+  // what did we hit?
+  // if we hit another surface in the volume, we shade the surface as usual and bounce the ray
+  // if we hit the volume boundary, we need to refract the ray out of the volume
+}
 
 /**
  * @brief Implements custom shading logic for rays intersecting scene geometry, meeting the assignment's requirements.
@@ -907,90 +1009,29 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   switch (bsdfType)
   {
-  case BSDFType::BSDF_DIFFUSE:
-  {
-    const float z1 = rnd(seed);
-    const float z2 = rnd(seed);
-    OrthonormalBasis onb(N);
-    float3 w_in;
-
-    if (useImportanceSampling)
+    case BSDFType::BSDF_DIFFUSE:
     {
-      cosine_sample_hemisphere(z1, z2, w_in);
-      onb.inverse_transform(w_in);
+      ShadeDiffuse(prd, rt_data, P, N);
+      break;
     }
-    else
+    case BSDFType::BSDF_METALLIC:
     {
-      uniform_sample_hemisphere(z1, z2, w_in);
-      onb.inverse_transform(w_in);
+      ShadeMetallic(prd, rt_data, P, N, ray_dir);
+      break;
     }
-
-    prd.direction = w_in;
-    prd.origin = P;
-    prd.attenuation *= rt_data->diffuseColor;
-    
-    break;
-  }
-  case BSDFType::BSDF_METALLIC:
-  {
-    roughness += metalRoughOffset;
-    clamp(roughness, 0.001f, 1.0f);
-    const float z1 = rnd(seed);
-    const float z2 = rnd(seed);
-    float3 microfacetNormal = sampleGGX(z1, z2, roughness, N);
-    float3 R = reflect(ray_dir, microfacetNormal); 
-
-    prd.direction = R;
-    prd.origin = P + R * 1e-4f;
-
-
-    float3 eta = make_float3(1.45, 0.7, 1.55); // Slightly more refraction in the blue channel
-    float3 k = make_float3(3.0, 2.2, 3.5); // Higher absorption in the red and blue channels
-    float cosTheta = fmaxf(dot(microfacetNormal, -ray_dir), 0.0f);
-    float3 F = fresnelSchlickConductor(cosTheta, eta, k);
-    float3 F0 = rt_data->diffuseColor; // The base color of the material
-    float3 color = F * F0;
-
-    prd.attenuation *= color;
-    break;
-
-  }
-  case BSDFType::BSDF_REFRACTION:
-  {
-    const float z1 = rnd(seed);
-    const float z2 = rnd(seed);
-
-    roughness += refractRoughOffset;
-    clamp(roughness, 0.001f, 1.0f);
-
-    float3 incidentRayDir = normalize(ray_dir);
-
-    float3 microFacetNormal =  sampleGGX(z1, z2, roughness, N_0);
-
-    float cos_theta = dot(-incidentRayDir, microFacetNormal);
-    float F = FrDielectric(cos_theta, 1.0f, IOR);
-
-
-    if (rnd(seed) < F) {
-      prd.direction = reflect(incidentRayDir, microFacetNormal);
+    case BSDFType::BSDF_REFRACTION:
+    {
+      ShadeDielectric(prd, rt_data, P, N_0, ray_dir);
+      break;
 
     }
-    else {
-
-      float3 refractedDir; // Initialized by the refract function
-      bool didRefract = refract(refractedDir, incidentRayDir, microFacetNormal, IOR);
-      if (didRefract) {
-        prd.direction = refractedDir;
-      }
-      else {
-        prd.direction = reflect(incidentRayDir, microFacetNormal);
-      }
+    case BSDFType::BSDF_VOLUME: {
+      //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
+      
+      //temporarily lets just send the ray through 
+      prd.direction = ray_dir;
+      prd.origin = P + prd.direction * 1e-4f;
     }
-    prd.origin = P + prd.direction * 1e-3f;
-    prd.attenuation *= rt_data->diffuseColor;
-    break;
-
-  }
   }
 
   const float z1 = rnd(seed);
@@ -1000,13 +1041,13 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   float weight = 0.01f;
   AreaLight light = params.areaLight;
 
-  if (length(rt_data->emissionColor) > 0.0f) {
+  if (length(rt_data->emissionColor) > 0.0f && bsdfType != BSDFType::BSDF_VOLUME) {
     prd.radiance = rt_data->emissionColor;
     prd.done = true;
     prd.doneReason = DoneReason::LIGHT_HIT;
   }
   else {
-    prd.radiance = make_float3(0.0f);
+    prd.radiance = make_float3(0.01f);
     prd.done = false;
   }
 
