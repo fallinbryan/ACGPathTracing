@@ -13,6 +13,7 @@ enum DoneReason {
   MAX_DEPTH,
   RUSSIAN_ROULETTE,
   LIGHT_HIT,
+  ABSORBED,
   NOT_DONE
 };
 

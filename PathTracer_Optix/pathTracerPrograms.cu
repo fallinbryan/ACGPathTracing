@@ -270,6 +270,17 @@ static __forceinline__ __device__ void storeMissRadiancePRD(RadiancePayloadRayDa
   optixSetPayload_18(prd.doneReason);
 }
 
+static __forceinline__ __device__ void storeMissVolumePRD(VolumePayLoadRayData vrd)
+{
+  optixSetPayload_8(__float_as_uint(vrd.radiance.x));
+  optixSetPayload_9(__float_as_uint(vrd.radiance.y));
+  optixSetPayload_10(__float_as_uint(vrd.radiance.z));
+
+  optixSetPayload_17(vrd.done);
+  optixSetPayload_18(vrd.doneReason);
+  optixSetPayload_19(__float_as_uint(vrd.tMax));
+
+}
 
 /**
  * @brief Safely divides two floating point numbers.
@@ -883,6 +894,8 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
     vrd
   );
 
+  prd.radiance = vrd.radiance;
+
 }
 
 /**
@@ -1063,8 +1076,13 @@ extern "C" __global__ void __miss__volume__ms()
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadMissVolumePRD();
   
+  //lets do something silly for now and set the radiance to magenta
+  vrd.radiance = make_float3(1.0f, 0.0f, 1.0f);
+  vrd.doneReason = DoneReason::ABSORBED;
+  vrd.done = true;
 
-  printf("Volume miss invoked\n");
+  storeMissVolumePRD(vrd);
+  
 
 
 
@@ -1164,6 +1182,9 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     case BSDFType::BSDF_VOLUME: {
 
       ShadeVolume(prd, rt_data, P, N_0, ray_dir);
+      //prd radiance should be magenta right now, lets check with a printf
+      //printf("Volume radiance: %f, %f, %f\n", prd.radiance.x, prd.radiance.y, prd.radiance.z);
+      
 
       break;
     }
@@ -1186,8 +1207,8 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     prd.doneReason = DoneReason::LIGHT_HIT;
   }
   else {
-    prd.radiance = make_float3(0.01f);
-    prd.done = false;
+    //prd.radiance = make_float3(0.01f);
+    //prd.done = false;
   }
 
 
