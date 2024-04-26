@@ -124,6 +124,20 @@ static __forceinline__ __device__ RadiancePayloadRayData loadClosesthitRadianceP
   return prd;
 }
 
+static __forceinline__ __device__ VolumePayLoadRayData loadClosesthitVolumePRD()
+{
+  VolumePayLoadRayData prd = {};
+
+  prd.attenuation.x = __uint_as_float(optixGetPayload_0());
+  prd.attenuation.y = __uint_as_float(optixGetPayload_1());
+  prd.attenuation.z = __uint_as_float(optixGetPayload_2());
+  prd.randomSeed = optixGetPayload_3();
+  prd.step = optixGetPayload_4();
+  prd.doneReason = (DoneReason)(optixGetPayload_18());
+  prd.tMax = __uint_as_float(optixGetPayload_19());
+  return prd;
+}
+
 /**
  * @brief Initializes and returns an empty radiance payload data structure for rays that miss geometry, directly from the NVIDIA OptiX Toolkit.
  *
@@ -152,6 +166,12 @@ static __forceinline__ __device__ RadiancePayloadRayData loadClosesthitRadianceP
 static __forceinline__ __device__ RadiancePayloadRayData loadMissRadiancePRD()
 {
   RadiancePayloadRayData prd = {};
+  return prd;
+}
+
+static __forceinline__ __device__ VolumePayLoadRayData loadMissVolumePRD()
+{
+  VolumePayLoadRayData prd = {};
   return prd;
 }
 
@@ -467,7 +487,7 @@ static __forceinline__ __device__ float3 sampleGGX(float u1, float u2, float rou
   H.z = cosTheta;
 
   // Transform H to world space
-  float3 up = abs(N.z) < 0.999 ? make_float3(0, 0, 1) : make_float3(1, 0, 0);
+  float3 up = fabsf(N.z) < 0.999 ? make_float3(0, 0, 1) : make_float3(1, 0, 0);
   float3 tangent = normalize(cross(up, N));
   float3 bitangent = cross(N, tangent);
   float3 sampleDir = H.x * tangent + H.y * bitangent + H.z * N;
@@ -679,11 +699,7 @@ static __forceinline__ __device__ void traceRadiance(
   u4 = prd.depth;
   u18 = prd.doneReason;
 
-  // Note:
-  // This demonstrates the usage of the OptiX shader execution reordering 
-  // (SER) API.  In the case of this computationally simple shading code, 
-  // there is no real performance benefit.  However, with more complex shaders
-  // the potential performance gains offered by reordering are significant.
+  
   optixTraverse(
     RADIANCE_PAYLOAD_TYPE,
     handle,
@@ -695,19 +711,25 @@ static __forceinline__ __device__ void traceRadiance(
     OptixVisibilityMask(1),
     OPTIX_RAY_FLAG_NONE,
     0,                      // SBT offset
-    NUM_RAYTYPES,           // SBT stride
+    2,                      // SBT stride
     0,                      // missSBTIndex
     u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18);
-
+  
+  // Note:
+  // This demonstrates the usage of the OptiX shader execution reordering 
+  // (SER) API.  In the case of this computationally simple shading code, 
+  // there is no real performance benefit.  However, with more complex shaders
+  // the potential performance gains offered by reordering are significant.
   optixReorder(
     // Application specific coherence hints could be passed in here
   );
 
-
+  
   optixInvoke(
     RADIANCE_PAYLOAD_TYPE,
     u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18
   );
+  //printf("Did we get here?");
 
   prd.attenuation = make_float3(__uint_as_float(u0), __uint_as_float(u1), __uint_as_float(u2));
   prd.randomSeed = u3;
@@ -745,6 +767,7 @@ static __forceinline__ __device__ bool traceOcclusion(
 {
   // We are only casting probe rays so no shader invocation is needed
   optixTraverse(
+    RADIANCE_PAYLOAD_TYPE,
     handle,
     ray_origin,
     ray_direction,
@@ -811,6 +834,8 @@ extern "C" __global__ void __raygen__rg()
   int i = params.samplesPerPixel;
   RadiancePayloadRayData prd;
 
+  
+
   do
   {
     // The center of each pixel is at fraction (0.5,0.5)
@@ -842,7 +867,7 @@ extern "C" __global__ void __raygen__rg()
         1e16f,  // tmax
         prd
       );
-
+      
       // at this point the PRD should be updated with the result of the trace
       result += prd.emissionColor;
       result += prd.radiance * prd.attenuation;
@@ -933,7 +958,7 @@ extern "C" __global__ void __miss__ms()
   storeMissRadiancePRD(prd);
 }
 
-extern "C" __global__ void __volume_miss__ms()
+extern "C" __global__ void __miss__volume__ms()
 {
   // we expect most volume rays to miss geometry because they are ray marching through the volume
   // assume the end of the ray is inside the volume, this miss shader is being called at time step t
@@ -941,14 +966,32 @@ extern "C" __global__ void __volume_miss__ms()
 
   // Sample to the volume at the current position and accumulate the volume's emission and scattering properties
   
+
+  
+  optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
+  VolumePayLoadRayData vrd = loadMissVolumePRD();
+  
+
+  printf("Volume miss invoked\n");
+
+
 }
 
 extern "C" __global__ void __closesthit__volume__ch() {
   // we are inside the volume and we hit something. 
   // what did we hit?
   // if we hit another surface in the volume, we shade the surface as usual and bounce the ray
-  // if we hit the volume boundary, we need to refract the ray out of the volume
+  // if we hit the volume boundary, we need to mark the ray as done and return the volume's emission and scattering properties
+  optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
+  VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
+
+ 
+  printf("Volume closest hit invoked\n");
+
+
+ 
 }
+
 
 /**
  * @brief Implements custom shading logic for rays intersecting scene geometry, meeting the assignment's requirements.
@@ -1028,6 +1071,11 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     case BSDFType::BSDF_VOLUME: {
       //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
       
+      //get the max extent from the volumes AABB 
+      // divide by 100 to get the step size
+      // loop trough the volume and accumulate the volume's emission and scattering properties
+      // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
+
       //temporarily lets just send the ray through 
       prd.direction = ray_dir;
       prd.origin = P + prd.direction * 1e-4f;

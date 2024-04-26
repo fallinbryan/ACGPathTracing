@@ -43,7 +43,7 @@
 
 std::string CONFIG_FILE = "AppConfig.cfg";
 
-unsigned int maxiumumRecursionDepth = 28;
+unsigned int maximumRecursionDepth = 28;
 int32_t samples_per_launch = 128;
 UINT32 frame_counter;
 UINT32 sample_summ;
@@ -88,8 +88,8 @@ struct PathTracerState {
     
     
     OptixProgramGroup raygen_prog_group = nullptr;
-    OptixProgramGroup miss_prog_group = nullptr;
-    OptixProgramGroup hitgroup_prog_group = nullptr;
+    OptixProgramGroup miss_prog_groups[2];
+    OptixProgramGroup hitgroup_prog_groups[2];
     
     CUstream stream = 0;
     PathTraceParams params = {};
@@ -146,7 +146,7 @@ static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, i
       refreshAccumulationBuffer = true;
     }
     else if (key == GLFW_KEY_UP) {
-      params->maxDepth = std::min((int)maxiumumRecursionDepth, (int)params->maxDepth + 1);
+      params->maxDepth = std::min((int)maximumRecursionDepth, (int)params->maxDepth + 1);
       refreshAccumulationBuffer = true;
       std::cout << std::endl << "Max Depth: " << params->maxDepth << std::endl;
     }
@@ -343,7 +343,7 @@ void createDeviceContext(PathTracerState& state) {
   OptixDeviceContextOptions opts = {};
   opts.logCallbackFunction = context_log_callback;
   opts.logCallbackLevel = 4;
-  opts.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL; // remove this line for release builds
+  //opts.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL; // remove this line for release builds
 
   OPTIX_CHECK(optixDeviceContextCreate(cu_ctx, &opts, &context));
 
@@ -494,18 +494,23 @@ void buildTheAccelarationStructure(PathTracerState& state, TinyObjWrapper objs) 
 
 void createModule(PathTracerState& state) {
  
-  OptixPayloadType payloadType = {};
+  OptixPayloadType radiancePayloadType = {};
+  radiancePayloadType.numPayloadValues = sizeof(radiancePayloadRayDataSemantics) / sizeof(radiancePayloadRayDataSemantics[0]);
+  radiancePayloadType.payloadSemantics = radiancePayloadRayDataSemantics;
 
-  payloadType.numPayloadValues = sizeof(radiancePayloadRayDataSemantics) / sizeof(radiancePayloadRayDataSemantics[0]);
-  payloadType.payloadSemantics = radiancePayloadRayDataSemantics;
+  OptixPayloadType volumePayloadType = {};
+  volumePayloadType.numPayloadValues = sizeof(volumePayloadRayDataSemantics) / sizeof(volumePayloadRayDataSemantics[0]);
+  volumePayloadType.payloadSemantics = volumePayloadRayDataSemantics;
+
+  OptixPayloadType payloadTypes[] = { radiancePayloadType, volumePayloadType };
 
   OptixModuleCompileOptions module_compile_options = {};
 
   module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;/// OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // TODO: Change this to 3 for release builds
-  module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE; // OPTIX_COMPILE_DEBUG_LEVEL_FULL;  // TODO: Change this to 0 for release builds
+  module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE; // OPTIX_COMPILE_DEBUG_LEVEL_FULL;  // TODO: Change this to OPTIX_COMPILE_DEBUG_LEVEL_NONE for release builds
 
-  module_compile_options.numPayloadTypes = 1; // TODO: Change this to 2 for shadow rays
-  module_compile_options.payloadTypes = &payloadType;
+  module_compile_options.numPayloadTypes = 2; 
+  module_compile_options.payloadTypes = payloadTypes;
 
   state.pipeline_compile_options.usesMotionBlur = false;
   state.pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
@@ -528,7 +533,6 @@ void createModule(PathTracerState& state) {
   ));
 
 }
-
 
 void createProgramGroups(PathTracerState& state) {
   OptixProgramGroupOptions program_group_options = {}; // Initialize to zeros
@@ -561,7 +565,22 @@ void createProgramGroups(PathTracerState& state) {
       1,  // num program groups
       &program_group_options,
       LOG, &LOG_SIZE,
-      &state.miss_prog_group
+      &state.miss_prog_groups[0]
+    ));
+  }
+
+  {
+    OptixProgramGroupDesc miss_prog_group_desc = {};
+    miss_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+    miss_prog_group_desc.miss.module = state.module;
+    miss_prog_group_desc.miss.entryFunctionName = "__miss__volume__ms";
+    OPTIX_CHECK_LOG(optixProgramGroupCreate(
+      state.context,
+      &miss_prog_group_desc,
+      1,  // num program groups
+      &program_group_options,
+      LOG, &LOG_SIZE,
+      &state.miss_prog_groups[1]
     ));
   }
 
@@ -577,18 +596,41 @@ void createProgramGroups(PathTracerState& state) {
       1,  // num program groups
       &program_group_options,
       LOG, &LOG_SIZE,
-      &state.hitgroup_prog_group
+      &state.hitgroup_prog_groups[0]
     ));
-  
   }
+
+  {
+    OptixProgramGroupDesc hitgroup_prog_group_desc = {};
+    hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+    hitgroup_prog_group_desc.hitgroup.moduleCH = state.module;
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__volume__ch";
+
+    OPTIX_CHECK_LOG(optixProgramGroupCreate(
+      state.context,
+      &hitgroup_prog_group_desc,
+      1,  // num program groups
+      &program_group_options,
+      LOG, &LOG_SIZE,
+      &state.hitgroup_prog_groups[1]
+    ));
+  }
+
+
 }
 
 void createPipeline(PathTracerState& state) {
-  OptixProgramGroup program_groups[] = { state.raygen_prog_group, state.miss_prog_group, state.hitgroup_prog_group };
+  OptixProgramGroup program_groups[] = { 
+    state.raygen_prog_group, 
+    state.miss_prog_groups[0], 
+    state.miss_prog_groups[1],
+    state.hitgroup_prog_groups[0],
+    state.hitgroup_prog_groups[1]
+  };
   
 
   OptixPipelineLinkOptions pipeline_link_options = {};
-  pipeline_link_options.maxTraceDepth = maxiumumRecursionDepth;
+  pipeline_link_options.maxTraceDepth = maximumRecursionDepth;
 
 
   OPTIX_CHECK_LOG(optixPipelineCreate(
@@ -602,11 +644,13 @@ void createPipeline(PathTracerState& state) {
   ));
 
   OptixStackSizes stack_sizes = {};
-  OPTIX_CHECK( optixUtilAccumulateStackSizes( state.raygen_prog_group, &stack_sizes, state.pipeline ) );
-  OPTIX_CHECK( optixUtilAccumulateStackSizes( state.miss_prog_group, &stack_sizes, state.pipeline ) );
-  OPTIX_CHECK( optixUtilAccumulateStackSizes( state.hitgroup_prog_group, &stack_sizes, state.pipeline ) );
+  
+  for (auto& pg : program_groups) {
+        OPTIX_CHECK( optixUtilAccumulateStackSizes( pg, &stack_sizes, state.pipeline ));
+  }
 
-  uint32_t max_trace_depth = maxiumumRecursionDepth; 
+
+  uint32_t max_trace_depth = maximumRecursionDepth; 
   uint32_t max_cc_depth = 0;
   uint32_t max_dc_depth = 0;
   uint32_t direct_callable_stack_size_from_traversal;
@@ -633,12 +677,11 @@ void createPipeline(PathTracerState& state) {
 
 }
 
-
-
-
-void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
+void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj)
+{
 
   std::vector<Material> materials = obj.getMaterials();
+  std::vector<OptixAabb> aabbs = obj.getAabbs();
 
   CUdeviceptr d_raygen_record;
   const size_t raygen_record_size = sizeof(RayGenerationRecord);
@@ -654,13 +697,18 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
     cudaMemcpyHostToDevice
   ));
 
+  /// MISS RECORDS
+
   CUdeviceptr d_miss_record;
   const size_t miss_record_size = sizeof(MissRecord);
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_miss_record), miss_record_size * NUM_RAYTYPES));
 
-  MissRecord miss_record[1];
-  OPTIX_CHECK(optixSbtRecordPackHeader(state.miss_prog_group, &miss_record[0] ));
-  miss_record[0].data.backgroundColor = make_float4(0.0f);
+  MissRecord miss_record[NUM_RAYTYPES];
+
+  for (int i = 0; i < NUM_RAYTYPES; i++) {
+    OPTIX_CHECK(optixSbtRecordPackHeader(state.miss_prog_groups[i], &miss_record[i]));
+    miss_record[i].data.backgroundColor = make_float4(0.0f);
+  }
 
   CUDA_CHECK(cudaMemcpy(
     reinterpret_cast<void*>(d_miss_record),
@@ -669,63 +717,77 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj) {
     cudaMemcpyHostToDevice
   ));
 
+
+
+
+
   CUdeviceptr d_hitgroup_record;
   const size_t hitgroup_record_size = sizeof(HitGroupRecord);
   CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_hitgroup_record), hitgroup_record_size * NUM_RAYTYPES * materials.size()));
 
-  
+
   //std::array<HitGroupRecord,h_diffuse_colors.size() * NUM_RAYTYPES> hitgroup_records;
 
   size_t mat_count = materials.size();
 
   HitGroupRecord* hitgroup_records = new HitGroupRecord[mat_count * NUM_RAYTYPES];
-  for (int i = 0; i < materials.size(); i++)
-  {
+  for (int j = 0; j < NUM_RAYTYPES; j++) {
 
+    for (int i = 0; i < materials.size(); i++)
     {
-      const int shaderBindingTableIndex = i * NUM_RAYTYPES + 0;
 
-      
+      {
+        const int shaderBindingTableIndex = i * NUM_RAYTYPES + j;
+        OPTIX_CHECK(optixSbtRecordPackHeader(state.hitgroup_prog_groups[j], &hitgroup_records[shaderBindingTableIndex]));
 
-      OPTIX_CHECK(optixSbtRecordPackHeader(state.hitgroup_prog_group, &hitgroup_records[shaderBindingTableIndex]));
 
-      
 
-      hitgroup_records[shaderBindingTableIndex].data.emissionColor = materials[i].emission;
-      hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i].diffuse;
-      hitgroup_records[shaderBindingTableIndex].data.bsdfType = materials[i].bsdfType;
-      hitgroup_records[shaderBindingTableIndex].data.roughness = materials[i].roughness;
-      hitgroup_records[shaderBindingTableIndex].data.IOR = materials[i].ior;
-      hitgroup_records[shaderBindingTableIndex].data.metallic = materials[i].metallic;
-      hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
-      hitgroup_records[shaderBindingTableIndex].data.indices = reinterpret_cast<uint3*>(state.d_indices);
+        hitgroup_records[shaderBindingTableIndex].data.emissionColor = materials[i].emission;
+        hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i].diffuse;
+        hitgroup_records[shaderBindingTableIndex].data.bsdfType = materials[i].bsdfType;
+        hitgroup_records[shaderBindingTableIndex].data.roughness = materials[i].roughness;
+        hitgroup_records[shaderBindingTableIndex].data.IOR = materials[i].ior;
+        hitgroup_records[shaderBindingTableIndex].data.metallic = materials[i].metallic;
+        hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
+        hitgroup_records[shaderBindingTableIndex].data.indices = reinterpret_cast<uint3*>(state.d_indices);
+        hitgroup_records[shaderBindingTableIndex].data.aabb = aabbs[i];
+      }
     }
   }
 
-  CUDA_CHECK(cudaMemcpy(
-    reinterpret_cast<void*>(d_hitgroup_record),
-    hitgroup_records,
-    hitgroup_record_size * NUM_RAYTYPES * mat_count,
-    cudaMemcpyHostToDevice
-  ));
 
-  state.sbt.raygenRecord = d_raygen_record;
-  state.sbt.missRecordBase = d_miss_record;
-  state.sbt.missRecordStrideInBytes = static_cast<uint32_t>(miss_record_size);
-  state.sbt.missRecordCount = NUM_RAYTYPES;
-  state.sbt.hitgroupRecordBase = d_hitgroup_record;
-  state.sbt.hitgroupRecordStrideInBytes = static_cast<uint32_t>(hitgroup_record_size);
-  state.sbt.hitgroupRecordCount = NUM_RAYTYPES * mat_count;
+    CUDA_CHECK(cudaMemcpy(
+      reinterpret_cast<void*>(d_hitgroup_record),
+      hitgroup_records,
+      hitgroup_record_size * NUM_RAYTYPES * mat_count,
+      cudaMemcpyHostToDevice
+    ));
 
-  delete[] hitgroup_records;
+    state.sbt.raygenRecord = d_raygen_record;
+    state.sbt.missRecordBase = d_miss_record;
+    state.sbt.missRecordStrideInBytes = static_cast<uint32_t>(miss_record_size);
+    state.sbt.missRecordCount = NUM_RAYTYPES;
+    state.sbt.hitgroupRecordBase = d_hitgroup_record;
+    state.sbt.hitgroupRecordStrideInBytes = static_cast<uint32_t>(hitgroup_record_size);
+    state.sbt.hitgroupRecordCount = NUM_RAYTYPES * mat_count;
+
+    delete[] hitgroup_records;
 
 }
 
 void CleanAllTheThings(PathTracerState& state) {
+  OptixProgramGroup program_groups[] = {
+    state.raygen_prog_group,
+    state.miss_prog_groups[0],
+    state.miss_prog_groups[1],
+    state.hitgroup_prog_groups[0],
+    state.hitgroup_prog_groups[2]
+  };
   OPTIX_CHECK(optixPipelineDestroy(state.pipeline));
-  OPTIX_CHECK(optixProgramGroupDestroy(state.raygen_prog_group));
-  OPTIX_CHECK(optixProgramGroupDestroy(state.miss_prog_group));
-  OPTIX_CHECK(optixProgramGroupDestroy(state.hitgroup_prog_group));
+
+  for (auto& pg : program_groups)
+    OPTIX_CHECK(optixProgramGroupDestroy(pg));
+
   OPTIX_CHECK(optixModuleDestroy(state.module));
   OPTIX_CHECK(optixDeviceContextDestroy(state.context));
 
@@ -747,7 +809,7 @@ void main() {
     height = config.getInt("OUTPUT HEIGHT");
     width = config.getInt("OUTPUT WIDTH");
     objfilepath = config.getString("INPUT OBJ FILE");
-    maxiumumRecursionDepth = config.getInt("MAXIMUM RECRUSION DEPTH");
+    maximumRecursionDepth = config.getInt("MAXIMUM RECRUSION DEPTH");
     samples_per_launch = config.getInt("SAMPLES PER PIXEL");
     
     TinyObjWrapper obj(objfilepath);

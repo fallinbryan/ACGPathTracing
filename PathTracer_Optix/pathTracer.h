@@ -3,7 +3,7 @@
 #include <optix.h>
 #include "TinyObjWrapper.h"
 
-constexpr unsigned int NUM_RAYTYPES = 1; // TODO: Add shadow ray type
+constexpr unsigned int NUM_RAYTYPES = 2; // 0: radiance, 1: volume
 
 constexpr OptixPayloadTypeID RADIANCE_PAYLOAD_TYPE = OPTIX_PAYLOAD_TYPE_ID_0;
 constexpr OptixPayloadTypeID VOLUME_PAYLOAD_TYPE = OPTIX_PAYLOAD_TYPE_ID_1;
@@ -29,19 +29,19 @@ struct RadiancePayloadRayData {
   DoneReason doneReason; // Reason why the current path is done
 }; // 19 parameters
 
-struct VolumnPayLoadRayData {
-  float3 attenuation;
-  unsigned int randomSeed;
-  int step;
-  float3 emissionColor;
-  float3 radiance;
-  float3 origin;
-  float3 direction;
-  int done;
-  DoneReason doneReason;
-  float density;
-  OptixAabb aabb; //6 floats
-}; //26 parameters
+struct VolumePayLoadRayData {
+  float3 attenuation;         //  3
+  unsigned int randomSeed;    //  1
+  int step;                   //  1
+  float3 emissionColor;       //  3
+  float3 radiance;            //  3
+  float3 origin;              //  3
+  float3 direction;           //  3
+  int done;                   //  1
+  DoneReason doneReason;      //  1
+  float tMax;                 // +1
+                              //----
+};                            // 20 parameters
 
 
 const unsigned int radiancePayloadRayDataSemantics[19] =
@@ -76,7 +76,7 @@ const unsigned int radiancePayloadRayDataSemantics[19] =
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_READ_WRITE
 };
 
-const unsigned int VolumePayloadRayDataSemantics[26] =
+const unsigned int volumePayloadRayDataSemantics[20] =
 {
   // VolumePayloadRayData::attenuation
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE,
@@ -84,7 +84,7 @@ const unsigned int VolumePayloadRayDataSemantics[26] =
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE,
   // VolumePayloadRayData::seed
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE,
-  // VolumePayloadRayData::depth
+  // VolumePayloadRayData::step
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE,
   // VolumePayloadRayData::emitted
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
@@ -106,15 +106,8 @@ const unsigned int VolumePayloadRayDataSemantics[26] =
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
   // VolumePayloadRayData::doneReason
   OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_READ_WRITE,
-  //  float density;
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  ///OptixAabb aabb; //6 floats
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE,
-  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ | OPTIX_PAYLOAD_SEMANTICS_CH_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_WRITE
+  // VolumePayloadRayData::tmax
+  OPTIX_PAYLOAD_SEMANTICS_TRACE_CALLER_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_CH_READ_WRITE | OPTIX_PAYLOAD_SEMANTICS_MS_READ_WRITE
 };
 
 
@@ -164,6 +157,7 @@ struct MissData {
 
 struct HitGroupData {
   BSDFType bsdfType;
+  OptixAabb aabb;
   float3 emissionColor;
   float3 diffuseColor;
   float IOR;
