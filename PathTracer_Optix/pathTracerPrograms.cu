@@ -667,19 +667,6 @@ static __forceinline__ __device__ void ShadeDielectric(RadiancePayloadRayData& p
   prd.attenuation *= rt_data->diffuseColor;
 }
 
-static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) 
-{
-  //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
-
-  //get the max extent from the volumes AABB 
-  // divide by 100 to get the step size
-  // loop trough the volume and accumulate the volume's emission and scattering properties
-  // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
-
-  //temporarily lets just send the ray through 
-  prd.direction = ray_dir;
-  prd.origin = hitPoint + prd.direction * 1e-4f;
-}
 
 
 /**
@@ -758,6 +745,65 @@ static __forceinline__ __device__ void traceRadiance(
   prd.doneReason = (DoneReason)u18;
 }
 
+static __forceinline__ __device__ void traceVolume(
+  OptixTraversableHandle handle,
+  float3                 ray_origin,
+  float3                 ray_direction,
+  float                  tmin,
+  float                  tmax,
+  VolumePayLoadRayData& vrd
+)
+{
+  unsigned int u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18;
+
+  u0 = __float_as_uint(vrd.attenuation.x);
+  u1 = __float_as_uint(vrd.attenuation.y);
+  u2 = __float_as_uint(vrd.attenuation.z);
+  u3 = vrd.randomSeed;
+  u4 = vrd.step;
+  u18 = vrd.doneReason;
+
+
+  optixTraverse(
+    VOLUME_PAYLOAD_TYPE,
+    handle,
+    ray_origin,
+    ray_direction,
+    tmin,
+    tmax,
+    0.0f,                   // rayTime
+    OptixVisibilityMask(1),
+    OPTIX_RAY_FLAG_NONE,
+    0,                      // SBT offset
+    2,                      // SBT stride
+    1,                      // missSBTIndex
+    u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18);
+
+  // Note:
+  // This demonstrates the usage of the OptiX shader execution reordering 
+  // (SER) API.  In the case of this computationally simple shading code, 
+  // there is no real performance benefit.  However, with more complex shaders
+  // the potential performance gains offered by reordering are significant.
+
+
+
+  optixInvoke(
+    VOLUME_PAYLOAD_TYPE,
+    u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18
+  );
+  //printf("Did we get here?");
+
+  vrd.attenuation = make_float3(__uint_as_float(u0), __uint_as_float(u1), __uint_as_float(u2));
+  vrd.randomSeed = u3;
+  vrd.step = u4;
+
+  vrd.emissionColor = make_float3(__uint_as_float(u5), __uint_as_float(u6), __uint_as_float(u7));
+  vrd.radiance = make_float3(__uint_as_float(u8), __uint_as_float(u9), __uint_as_float(u10));
+  vrd.origin = make_float3(__uint_as_float(u11), __uint_as_float(u12), __uint_as_float(u13));
+  vrd.direction = make_float3(__uint_as_float(u14), __uint_as_float(u15), __uint_as_float(u16));
+  vrd.done = u17;
+  vrd.doneReason = (DoneReason)u18;
+}
 
 /**
  * @brief Traces a shadow ray through the scene and returns if the ray is occluded.
@@ -806,6 +852,37 @@ static __forceinline__ __device__ bool traceOcclusion(
   }
 
   return false;
+}
+
+static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) 
+{
+  //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
+
+  //get the max extent from the volumes AABB 
+  // divide by 100 to get the step size
+  // loop trough the volume and accumulate the volume's emission and scattering properties
+  // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
+
+  //temporarily lets just send the ray through 
+  prd.direction = ray_dir;
+  prd.origin = hitPoint + prd.direction * 1e-4f;
+
+  VolumePayLoadRayData vrd;
+
+  vrd.attenuation = make_float3(1.f); // The attenuation is initialized to 1
+  vrd.randomSeed = prd.randomSeed;
+  vrd.step = 0;
+  vrd.doneReason = DoneReason::NOT_DONE;
+
+  traceVolume(
+    params.handle,
+    prd.origin,
+    prd.direction,
+    0.01f,  // tmin       
+    1e16f,  // tmax
+    vrd
+  );
+
 }
 
 /**
@@ -988,6 +1065,7 @@ extern "C" __global__ void __miss__volume__ms()
   
 
   printf("Volume miss invoked\n");
+
 
 
 }
