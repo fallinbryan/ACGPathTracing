@@ -667,6 +667,21 @@ static __forceinline__ __device__ void ShadeDielectric(RadiancePayloadRayData& p
   prd.attenuation *= rt_data->diffuseColor;
 }
 
+static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) 
+{
+  //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
+
+  //get the max extent from the volumes AABB 
+  // divide by 100 to get the step size
+  // loop trough the volume and accumulate the volume's emission and scattering properties
+  // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
+
+  //temporarily lets just send the ray through 
+  prd.direction = ray_dir;
+  prd.origin = hitPoint + prd.direction * 1e-4f;
+}
+
+
 /**
  * @brief Traces a ray through the scene and updates the payload with the radiance information.
  *
@@ -1069,16 +1084,14 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
     }
     case BSDFType::BSDF_VOLUME: {
-      //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
-      
-      //get the max extent from the volumes AABB 
-      // divide by 100 to get the step size
-      // loop trough the volume and accumulate the volume's emission and scattering properties
-      // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
 
-      //temporarily lets just send the ray through 
-      prd.direction = ray_dir;
-      prd.origin = P + prd.direction * 1e-4f;
+      ShadeVolume(prd, rt_data, P, N_0, ray_dir);
+
+      break;
+    }
+    default: 
+    {
+      break;
     }
   }
 
