@@ -589,6 +589,42 @@ static __forceinline__ __device__ float FrDielectric(float cosThetaI, float etaI
   return (rParl * rParl + rPerp * rPerp) / 2.0f;
 }
 
+
+static __forceinline__ __device__ VolumeSample sampleVolume(VolumePayLoadRayData& vrd, float3 position, float3 direction, unsigned int seed, HitGroupData* rt_data)
+{
+
+  // For now, we are just going to sample a sphere in the volume
+  VolumeSample sample;
+
+  // Compute the center of the AABB
+  float3 center = make_float3(
+    (rt_data->aabb.minX + rt_data->aabb.maxX) / 2.0f,
+    (rt_data->aabb.minY + rt_data->aabb.maxY) / 2.0f,
+    (rt_data->aabb.minZ + rt_data->aabb.maxZ) / 2.0f
+  );
+
+  float radius = 0.25f; // Sphere radius
+
+  // Calculate the distance from the center of the sphere
+  float3 diff = position - center;
+  float distSq = dot(diff, diff);
+  float radiusSq = radius * radius;
+
+  // Check if the position is inside the sphere
+  if (distSq <= radiusSq) {
+    sample.density = 1.0f;  // High density inside the sphere
+    sample.rgba = make_float4(1.0f, 0.0f, 0.0f, 1.0f); // Red color with full opacity
+  }
+  else {
+    sample.density = 0.0f; // Zero density outside the sphere
+    sample.rgba = make_float4(0.0f, 0.0f, 0.0f, 0.0f); // No color
+  }
+
+  return sample;
+}
+
+
+
 static __forceinline__ __device__ void ShadeDiffuse(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal) {
   unsigned int seed = prd.randomSeed;
   const bool      useImportanceSampling = params.useImportanceSampling;
@@ -785,7 +821,7 @@ static __forceinline__ __device__ void traceVolume(
     0.0f,                   // rayTime
     OptixVisibilityMask(1),
     OPTIX_RAY_FLAG_NONE,
-    0,                      // SBT offset
+    1,                      // SBT offset
     2,                      // SBT stride
     1,                      // missSBTIndex
     u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18);
@@ -1097,7 +1133,7 @@ extern "C" __global__ void __closesthit__volume__ch() {
   VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
 
  
-  printf("Volume closest hit invoked\n");
+  //printf("Volume closest hit invoked\n");
 
 
  
