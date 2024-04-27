@@ -652,23 +652,29 @@ static __forceinline__ __device__ float FrDielectric(float cosThetaI, float etaI
 }
 
 
-static __forceinline__ __device__ VolumeSample sampleVolume(VolumePayLoadRayData& vrd, float3 position, float3 direction, unsigned int seed, HitGroupData* rt_data)
+static __forceinline__ __device__ VolumeSample sampleVolume(VolumePayLoadRayData& vrd, float3 position, float3 direction, unsigned int seed, float3 center)
 {
 
   // For now, we are just going to sample a sphere in the volume
   VolumeSample sample;
 
-  // Compute the center of the AABB
-  float3 center = make_float3(
-    (rt_data->aabb.minX + rt_data->aabb.maxX) / 2.0f,
-    (rt_data->aabb.minY + rt_data->aabb.maxY) / 2.0f,
-    (rt_data->aabb.minZ + rt_data->aabb.maxZ) / 2.0f
-  );
+  //printf("AABB: %f %f %f %f %f %f\n", rt_data->aabb.minX, rt_data->aabb.minY, rt_data->aabb.minZ, rt_data->aabb.maxX, rt_data->aabb.maxY, rt_data->aabb.maxZ);
+
+
 
   float radius = 0.25f; // Sphere radius
 
   // Calculate the distance from the center of the sphere
   float3 diff = position - center;
+
+  //print the center, the position and the diff all on one line
+  printf("Center: %f %f %f, Position: %f %f %f, Direction: %f %f %f  Diff: %f %f %f\n", 
+    center.x, center.y, center.z, 
+    position.x, position.y, position.z, 
+    direction.x, direction.y, direction.z,
+    diff.x, diff.y, diff.z
+  );
+
   float distSq = dot(diff, diff);
   float radiusSq = radius * radius;
 
@@ -1025,13 +1031,18 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
       vrd
     );
     
-
-    //printf("Current Step: %i, Start Pos: (%f,%f,%f) Current Pos: (%f, %f, %f) Accumulated Travel Distance: %f\n", 
-    //  step,
-    //  debugStartPos.x, debugStartPos.y, debugStartPos.z,  
-    //  vrd.origin.x, vrd.origin.y, vrd.origin.z,
-    //  length(vrd.origin - debugStartPos)
-    //);
+      //for debugging print the origin and the direction on one line
+      //printf("Origin: %f %f %f, Direction: %f %f %f\n", 
+      //  vrd.origin.x, vrd.origin.y, vrd.origin.z, 
+      //  vrd.direction.x, vrd.direction.y, vrd.direction.z
+      //);
+      // 
+ /*   printf("Current Step: %i, Start Pos: (%f,%f,%f) Current Pos: (%f, %f, %f) Accumulated Travel Distance: %f\n", 
+      step,
+      debugStartPos.x, debugStartPos.y, debugStartPos.z,  
+      vrd.origin.x, vrd.origin.y, vrd.origin.z,
+      length(vrd.origin - debugStartPos)
+    );*/
 
     //printf("Current Step: %i, Start Acc: (%f,%f,%f) Current acc: (%f, %f, %f) attenuation Distance: %f\n", 
     //  step,
@@ -1236,22 +1247,44 @@ extern "C" __global__ void __miss__volume__ms()
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_org = optixGetWorldRayOrigin();
   const float ray_tmax = optixGetRayTmax();
+  const float3 sample_pos = ray_org + ray_dir * ray_tmax;
+
+  //print ray origin and direction and tmax for debugging all on one line
+  //printf("sample_pos: %f %f %f, Ray Direction: %f %f %f, Ray tmax: %f\n",
+  //  sample_pos.x, sample_pos.y, sample_pos.z,
+  //  ray_dir.x, ray_dir.y, ray_dir.z, 
+  //  ray_tmax
+  //);
+
 
   unsigned int seed = vrd.randomSeed;
-  
-  vrd.origin = ray_org + ray_dir * ray_tmax;
+  //
+  //vrd.origin = ray_org + ray_dir * ray_tmax;
+  //vrd.direction = ray_dir;
+
+  //vrd.attenuation *= 1.0f;
+  //vrd.radiance *=  .9f;
+
+  //vrd.step += 1;
+  //if (rnd(seed) > 0.5f)
+  //{
+  //  //printf("Step is  acummulating as expected\n");
+  //  vrd.doneReason = DoneReason::ABSORBED;
+  //  vrd.done = true;
+  //} 
+
+  //VolumeSample sample = sampleVolume(vrd, sample_pos, ray_dir, seed, make_float3(276.399994f, 0.000021f, 279.600006f));
+
+  //if(sample.density == 0)
+  //{
+  //  return;
+  //}
+
+  //printf("Sampled density: %f\n", sample.density);
+  //vrd.attenuation *= make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
+
+  vrd.origin = sample_pos;
   vrd.direction = ray_dir;
-
-  vrd.attenuation *= 1.0f;
-  vrd.radiance *=  .9f;
-
-  vrd.step += 1;
-  if (rnd(seed) > 0.5f)
-  {
-    //printf("Step is  acummulating as expected\n");
-    vrd.doneReason = DoneReason::ABSORBED;
-    vrd.done = true;
-  } 
 
   storeMissVolumePRD(vrd);
   
@@ -1280,11 +1313,21 @@ extern "C" __global__ void __closesthit__volume__ch() {
     ray_origin.y >= aabb.minY && ray_origin.y <= aabb.maxY &&
     ray_origin.z >= aabb.minZ && ray_origin.z <= aabb.maxZ);
   bool originOutside = !originInside;
+    
+  //for debugging print the origin, hitpoint and the direction on one line
+  
   if(originOutside)
   {
-    // so we will handle this case by NOP
+    vrd.origin = hit_point;
+    vrd.direction = ray_dir;
+    storeClosesthitVolumePRD(vrd);
     return;
   }
+    //printf("Origin: %f %f %f, Hitpoint: %f %f %f, Direction: %f %f %f\n", 
+    //  ray_origin.x, ray_origin.y, ray_origin.z, 
+    //  hit_point.x, hit_point.y, hit_point.z, 
+    //  ray_dir.x, ray_dir.y, ray_dir.z
+    //);
 
   const uint3 idx = rt_data->indices[optixGetPrimitiveIndex()];
   const float3 v0 = make_float3(rt_data->vertices[idx.x]);
@@ -1423,7 +1466,15 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     }
     case BSDFType::BSDF_VOLUME: {
 
+      //// Compute the center of the AABB
+      //float3 center = make_float3(
+      //  (rt_data->aabb.minX + rt_data->aabb.maxX) / 2.0f,
+      //  (rt_data->aabb.minY + rt_data->aabb.maxY) / 2.0f,
+      //  (rt_data->aabb.minZ + rt_data->aabb.maxZ) / 2.0f
+      //);
 
+      ////print the center of the AABB
+      //printf("Center of the AABB: (%f, %f, %f)\n", center.x, center.y, center.z);
 
 
       ShadeVolume(prd, rt_data, P, N_0, ray_dir);
