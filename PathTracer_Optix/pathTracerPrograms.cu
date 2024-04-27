@@ -133,6 +133,11 @@ static __forceinline__ __device__ VolumePayLoadRayData loadClosesthitVolumePRD()
   prd.attenuation.x = __uint_as_float(optixGetPayload_0());
   prd.attenuation.y = __uint_as_float(optixGetPayload_1());
   prd.attenuation.z = __uint_as_float(optixGetPayload_2());
+
+  prd.radiance.x = __uint_as_float(optixGetPayload_8());
+  prd.radiance.y = __uint_as_float(optixGetPayload_9());
+  prd.radiance.z = __uint_as_float(optixGetPayload_10());
+
   prd.randomSeed = optixGetPayload_3();
   prd.step = optixGetPayload_4();
   prd.doneReason = (DoneReason)(optixGetPayload_18());
@@ -177,6 +182,11 @@ static __forceinline__ __device__ VolumePayLoadRayData loadMissVolumePRD()
   vrd.attenuation.x = __uint_as_float(optixGetPayload_0());
   vrd.attenuation.y = __uint_as_float(optixGetPayload_1());
   vrd.attenuation.z = __uint_as_float(optixGetPayload_2());
+
+  vrd.radiance.x = __uint_as_float(optixGetPayload_8());
+  vrd.radiance.y = __uint_as_float(optixGetPayload_9());
+  vrd.radiance.z = __uint_as_float(optixGetPayload_10());
+
   vrd.step = optixGetPayload_4();
   vrd.doneReason = (DoneReason)(optixGetPayload_18());
   vrd.tMax = __uint_as_float(optixGetPayload_19());
@@ -860,6 +870,25 @@ static __forceinline__ __device__ void traceVolume(
   u2 = __float_as_uint(vrd.attenuation.z);
   u3 = vrd.randomSeed;
   u4 = vrd.step;
+
+  u5 = __float_as_uint(vrd.emissionColor.x);
+  u6 = __float_as_uint(vrd.emissionColor.y);
+  u7 = __float_as_uint(vrd.emissionColor.z);
+
+  u8 = __float_as_uint(vrd.radiance.x);
+  u9 = __float_as_uint(vrd.radiance.y);
+  u10 = __float_as_uint(vrd.radiance.z);
+
+  u11 = __float_as_uint(vrd.origin.x);
+  u12 = __float_as_uint(vrd.origin.y);
+  u13 = __float_as_uint(vrd.origin.z);
+
+  u14 = __float_as_uint(vrd.direction.x);
+  u15 = __float_as_uint(vrd.direction.y);
+  u16 = __float_as_uint(vrd.direction.z);
+
+  u17 = vrd.done;
+
   u18 = vrd.doneReason;
 
 
@@ -964,15 +993,18 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
 
   VolumePayLoadRayData vrd;
 
-  vrd.attenuation = make_float3(1.f); // The attenuation is initialized to 1
+  //vrd.attenuation = make_float3(1.f); // The attenuation is initialized to 1
   vrd.attenuation = prd.attenuation;
   vrd.randomSeed = prd.randomSeed;
   vrd.step = 0;
   vrd.doneReason = DoneReason::NOT_DONE;
   vrd.origin = hitPoint;
   vrd.direction = ray_dir;
+  vrd.radiance = make_float3(.5f);
+
 
   float3 debugStartPos = hitPoint;
+  float3 debugAttenuation = prd.attenuation;
 
   for (int step = 0; step < 100; step++) {
 
@@ -984,6 +1016,7 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
       step_size,  // tmax
       vrd
     );
+    
 
     //printf("Current Step: %i, Start Pos: (%f,%f,%f) Current Pos: (%f, %f, %f) Accumulated Travel Distance: %f\n", 
     //  step,
@@ -992,16 +1025,29 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
     //  length(vrd.origin - debugStartPos)
     //);
 
+    //printf("Current Step: %i, Start Acc: (%f,%f,%f) Current acc: (%f, %f, %f) attenuation Distance: %f\n", 
+    //  step,
+    //  debugAttenuation.x, debugAttenuation.y, debugAttenuation.z,
+    //  vrd.attenuation.x, vrd.attenuation.y, vrd.attenuation.z,
+    //  length(vrd.attenuation - debugAttenuation)
+    //);
+
     if (vrd.done) {
       break;
     }
   }
 
+  
 
   prd.radiance = vrd.radiance;
   prd.attenuation = vrd.attenuation;
   prd.origin = vrd.origin - vrd.direction * step_size;
   prd.direction = vrd.direction;
+
+  ///what happes with a straight pass through the volume?
+  //prd.origin = hitPoint + prd.direction * 1e-4f;
+  ///prd.direction = ray_dir;
+
 
 }
 
@@ -1182,13 +1228,17 @@ extern "C" __global__ void __miss__volume__ms()
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_org = optixGetWorldRayOrigin();
   const float ray_tmax = optixGetRayTmax();
+
+  unsigned int seed = vrd.randomSeed;
   
   vrd.origin = ray_org + ray_dir * ray_tmax;
   vrd.direction = ray_dir;
 
   vrd.attenuation *= 1.0f;
+  vrd.radiance *=  .9f;
+
   vrd.step += 1;
-  if (vrd.step == 5) 
+  if (rnd(seed) > 0.5f)
   {
     //printf("Step is  acummulating as expected\n");
     vrd.doneReason = DoneReason::ABSORBED;
@@ -1210,12 +1260,18 @@ extern "C" __global__ void __closesthit__volume__ch() {
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
 
+  const float3 ray_dir = optixGetWorldRayDirection();
+  const float3 ray_org = optixGetWorldRayOrigin();
+  const float3 hit_point = ray_org + ray_dir * optixGetRayTmax();
  
   //printf("Volume closest hit invoked\n");
-  //vrd.attenuation *= make_float3(0.0f, 0.0, 1.0f);
+  //vrd.radiance *= make_float3(20.1f);
+  vrd.attenuation *= make_float3(1.0f);
   vrd.done = true;
 
- 
+  vrd.origin = hit_point - ray_dir * 1e-2f;
+
+  storeClosesthitVolumePRD(vrd);
 }
 
 
@@ -1269,7 +1325,7 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   RadiancePayloadRayData prd = loadClosesthitRadiancePRD();
 
-  if (prd.depth == 0)
+  if (prd.depth == 0 && bsdfType != BSDFType::BSDF_VOLUME)
     prd.emissionColor = rt_data->emissionColor;
   else
     prd.emissionColor = make_float3(0.0f);
@@ -1296,10 +1352,13 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     }
     case BSDFType::BSDF_VOLUME: {
 
+
+
+
       ShadeVolume(prd, rt_data, P, N_0, ray_dir);
 
-      
-
+     
+ 
       break;
     }
     default: 
@@ -1323,7 +1382,7 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
 
 
-  if (useDirectLighting && bsdfType != BSDFType::BSDF_REFRACTION) // this direct lightin model does not work at all with refraction
+  if (useDirectLighting && bsdfType != BSDFType::BSDF_REFRACTION && bsdfType != BSDFType::BSDF_VOLUME) // this direct lightin model does not work at all with refraction
   {
     weight = 0.0f;
     //perturb the light position
