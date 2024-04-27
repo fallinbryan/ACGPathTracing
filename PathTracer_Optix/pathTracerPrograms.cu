@@ -128,21 +128,30 @@ static __forceinline__ __device__ RadiancePayloadRayData loadClosesthitRadianceP
 
 static __forceinline__ __device__ VolumePayLoadRayData loadClosesthitVolumePRD()
 {
-  VolumePayLoadRayData prd = {};
+  VolumePayLoadRayData vrd = {};
 
-  prd.attenuation.x = __uint_as_float(optixGetPayload_0());
-  prd.attenuation.y = __uint_as_float(optixGetPayload_1());
-  prd.attenuation.z = __uint_as_float(optixGetPayload_2());
+  vrd.attenuation.x = __uint_as_float(optixGetPayload_0());
+  vrd.attenuation.y = __uint_as_float(optixGetPayload_1());
+  vrd.attenuation.z = __uint_as_float(optixGetPayload_2());
 
-  prd.radiance.x = __uint_as_float(optixGetPayload_8());
-  prd.radiance.y = __uint_as_float(optixGetPayload_9());
-  prd.radiance.z = __uint_as_float(optixGetPayload_10());
+  vrd.radiance.x = __uint_as_float(optixGetPayload_8());
+  vrd.radiance.y = __uint_as_float(optixGetPayload_9());
+  vrd.radiance.z = __uint_as_float(optixGetPayload_10());
 
-  prd.randomSeed = optixGetPayload_3();
-  prd.step = optixGetPayload_4();
-  prd.doneReason = (DoneReason)(optixGetPayload_18());
-  prd.tMax = __uint_as_float(optixGetPayload_19());
-  return prd;
+  vrd.randomSeed = optixGetPayload_3();
+  vrd.step = optixGetPayload_4();
+  vrd.doneReason = (DoneReason)(optixGetPayload_18());
+  vrd.tMax = __uint_as_float(optixGetPayload_19());
+
+  vrd.volumeAabb.minX = __uint_as_float(optixGetPayload_20());
+  vrd.volumeAabb.minY = __uint_as_float(optixGetPayload_21());
+  vrd.volumeAabb.minZ = __uint_as_float(optixGetPayload_22());
+  vrd.volumeAabb.maxX = __uint_as_float(optixGetPayload_23());
+  vrd.volumeAabb.maxY = __uint_as_float(optixGetPayload_24());
+  vrd.volumeAabb.maxZ = __uint_as_float(optixGetPayload_25());
+
+
+  return vrd;
 }
 
 /**
@@ -488,16 +497,18 @@ static __forceinline__ __device__ const char* doneReasonToString(DoneReason reas
 {
   switch (reason)
   {
-  case DoneReason::MISS:
-    return "MISS";
-  case DoneReason::MAX_DEPTH:
-    return "MAX_DEPTH";
-  case DoneReason::RUSSIAN_ROULETTE:
-    return "RUSSIAN_ROULETTE";
-  case DoneReason::NOT_DONE:
-    return "NOT_DONE";
-  default:
-    return "UNKNOWN";
+    case DoneReason::MISS:
+      return "MISS";
+    case DoneReason::MAX_DEPTH:
+      return "MAX_DEPTH";
+    case DoneReason::RUSSIAN_ROULETTE:
+      return "RUSSIAN_ROULETTE";
+    case DoneReason::NOT_DONE:
+      return "NOT_DONE";
+    case DoneReason::VOLUME_BOUNDARY:
+      return "VOLUME_BOUNDARY";
+    default:
+      return "UNKNOWN";
   }
 }
 
@@ -662,18 +673,18 @@ static __forceinline__ __device__ VolumeSample sampleVolume(VolumePayLoadRayData
 
 
 
-  float radius = 0.25f; // Sphere radius
+  float radius = 100.0f; // Sphere radius
 
   // Calculate the distance from the center of the sphere
   float3 diff = position - center;
 
   //print the center, the position and the diff all on one line
-  printf("Center: %f %f %f, Position: %f %f %f, Direction: %f %f %f  Diff: %f %f %f\n", 
-    center.x, center.y, center.z, 
-    position.x, position.y, position.z, 
-    direction.x, direction.y, direction.z,
-    diff.x, diff.y, diff.z
-  );
+  //printf("Center: %f %f %f, Position: %f %f %f, Direction: %f %f %f  Diff: %f %f %f\n", 
+  //  center.x, center.y, center.z, 
+  //  position.x, position.y, position.z, 
+  //  direction.x, direction.y, direction.z,
+  //  diff.x, diff.y, diff.z
+  //);
 
   float distSq = dot(diff, diff);
   float radiusSq = radius * radius;
@@ -1015,22 +1026,23 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
   vrd.origin = origin;
   vrd.direction = ray_dir;
   vrd.radiance = make_float3(.5f);
+  vrd.volumeAabb = rt_data->aabb;
 
 
   float3 debugStartPos = origin;
   float3 debugAttenuation = prd.attenuation;
 
-  for (int step = 0; step < 100; step++) {
-
+  for (int step = 0; step <= 100; step++) {
+    vrd.step = step;
     traceVolume(
       params.handle,
       vrd.origin,
       vrd.direction,
-      0.01f,  // tmin       
+      0.1f,  // tmin       
       step_size,  // tmax
       vrd
     );
-    
+    //if(step > 99) printf("Current Step: %i\n", step);
       //for debugging print the origin and the direction on one line
       //printf("Origin: %f %f %f, Direction: %f %f %f\n", 
       //  vrd.origin.x, vrd.origin.y, vrd.origin.z, 
@@ -1052,18 +1064,21 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
     //);
 
     if (vrd.done) {
+      //printf("Done Reason: %s\n", doneReasonToString(vrd.doneReason));
+
       break;
     }
   }
 
   
 
-  prd.radiance = vrd.radiance;
+  //prd.radiance = vrd.radiance;
   prd.attenuation = vrd.attenuation;
-  prd.origin = vrd.origin - vrd.direction * step_size;
+  
+  prd.origin = vrd.origin;
   prd.direction = vrd.direction;
 
-  ///what happes with a straight pass through the volume?
+  ///what happens with a straight pass through the volume?
   //prd.origin = hitPoint + prd.direction * 1e-4f;
   ///prd.direction = ray_dir;
 
@@ -1244,6 +1259,8 @@ extern "C" __global__ void __miss__volume__ms()
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadMissVolumePRD();
 
+  
+
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_org = optixGetWorldRayOrigin();
   const float ray_tmax = optixGetRayTmax();
@@ -1273,19 +1290,22 @@ extern "C" __global__ void __miss__volume__ms()
   //  vrd.done = true;
   //} 
 
-  //VolumeSample sample = sampleVolume(vrd, sample_pos, ray_dir, seed, make_float3(276.399994f, 0.000021f, 279.600006f));
+  VolumeSample sample = sampleVolume(vrd, sample_pos, ray_dir, seed, make_float3(276.399994f, 0.000021f, 279.600006f));
 
-  //if(sample.density == 0)
-  //{
-  //  return;
-  //}
+  if(sample.density == 0)
+  {
+    vrd.origin = sample_pos;
+    vrd.direction = ray_dir;
+    storeMissVolumePRD(vrd);
+    return;
+  }
 
-  //printf("Sampled density: %f\n", sample.density);
-  //vrd.attenuation *= make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
+  vrd.attenuation *= make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
+  //print the vrd attenuation on one line
+  //printf("Attenuation: %f %f %f\n", vrd.attenuation.x, vrd.attenuation.y, vrd.attenuation.z);
 
   vrd.origin = sample_pos;
   vrd.direction = ray_dir;
-
   storeMissVolumePRD(vrd);
   
 
@@ -1301,13 +1321,17 @@ extern "C" __global__ void __closesthit__volume__ch() {
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
 
+  
+
   HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_origin = optixGetWorldRayOrigin();
   const float3 hit_point = ray_origin + ray_dir * optixGetRayTmax();
   const BSDFType bsdfType = rt_data->bsdfType;
 
-  OptixAabb aabb = rt_data->aabb;
+  OptixAabb aabb = vrd.volumeAabb;
+
+  
 
   bool originInside = (ray_origin.x >= aabb.minX && ray_origin.x <= aabb.maxX &&
     ray_origin.y >= aabb.minY && ray_origin.y <= aabb.maxY &&
@@ -1321,6 +1345,7 @@ extern "C" __global__ void __closesthit__volume__ch() {
     vrd.origin = hit_point;
     vrd.direction = ray_dir;
     storeClosesthitVolumePRD(vrd);
+    //printf("Origin is outside the volume\n");
     return;
   }
     //printf("Origin: %f %f %f, Hitpoint: %f %f %f, Direction: %f %f %f\n", 
@@ -1347,23 +1372,25 @@ extern "C" __global__ void __closesthit__volume__ch() {
   switch (bsdfType) {
   case BSDFType::BSDF_VOLUME:
     //printf("Hit the volume boundary from %s the volume\n", originInside ? "inside" : "outside");
+
     vrd.done = true;
+    vrd.doneReason = DoneReason::VOLUME_BOUNDARY;
     break;
   case BSDFType::BSDF_DIFFUSE:
+   // printf("Hit a diffuse surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     ShadeDiffuse(shadingParams, rt_data);
-    //printf("Hit a diffuse surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     break;
   case BSDFType::BSDF_METALLIC:
+   // printf("Hit a metallic surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     ShadeMetallic(shadingParams, rt_data);
-    //printf("Hit a metallic surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     break;
   case BSDFType::BSDF_REFRACTION:
+    //printf("Hit a refractive surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     shadingParams.normal = N_0;  // Use geometric normal for dielectrics
     ShadeDielectric(shadingParams, rt_data);
-    //printf("Hit a refractive surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     break;
   default:
-   
+    //printf("Hit an unknown surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     break;
   }
 
@@ -1466,21 +1493,8 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     }
     case BSDFType::BSDF_VOLUME: {
 
-      //// Compute the center of the AABB
-      //float3 center = make_float3(
-      //  (rt_data->aabb.minX + rt_data->aabb.maxX) / 2.0f,
-      //  (rt_data->aabb.minY + rt_data->aabb.maxY) / 2.0f,
-      //  (rt_data->aabb.minZ + rt_data->aabb.maxZ) / 2.0f
-      //);
-
-      ////print the center of the AABB
-      //printf("Center of the AABB: (%f, %f, %f)\n", center.x, center.y, center.z);
-
-
       ShadeVolume(prd, rt_data, P, N_0, ray_dir);
-
-     
- 
+  
       break;
     }
     default: 
