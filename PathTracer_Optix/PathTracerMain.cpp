@@ -819,7 +819,7 @@ void main() {
     state.params.height = height;
     state.params.useDirectLighting = true;
     state.params.useImportanceSampling = true;
-    state.params.maxDepth = 4;
+    state.params.maxDepth = 10;
     sutil::CUDAOutputBufferType output_buffer_type = sutil::CUDAOutputBufferType::GL_INTEROP;
 
     try {
