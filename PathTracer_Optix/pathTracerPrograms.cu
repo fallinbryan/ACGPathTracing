@@ -20,6 +20,8 @@
 #include <sutil/vec_math.h>
 #include <cuda/helpers.h>
 
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 extern "C" {
   __constant__ PathTraceParams params;
@@ -228,6 +230,36 @@ static __forceinline__ __device__ void storeClosesthitRadiancePRD(RadiancePayloa
 
   optixSetPayload_17(prd.done);
   optixSetPayload_18(prd.doneReason);
+
+}
+
+static __forceinline__ __device__ void storeClosesthitVolumePRD(VolumePayLoadRayData vrd)
+{
+  optixSetPayload_0(__float_as_uint(vrd.attenuation.x));
+  optixSetPayload_1(__float_as_uint(vrd.attenuation.y));
+  optixSetPayload_2(__float_as_uint(vrd.attenuation.z));
+
+  optixSetPayload_3(vrd.randomSeed);
+  optixSetPayload_4(vrd.step);
+
+  optixSetPayload_5(__float_as_uint(vrd.emissionColor.x));
+  optixSetPayload_6(__float_as_uint(vrd.emissionColor.y));
+  optixSetPayload_7(__float_as_uint(vrd.emissionColor.z));
+
+  optixSetPayload_8(__float_as_uint(vrd.radiance.x));
+  optixSetPayload_9(__float_as_uint(vrd.radiance.y));
+  optixSetPayload_10(__float_as_uint(vrd.radiance.z));
+
+  optixSetPayload_11(__float_as_uint(vrd.origin.x));
+  optixSetPayload_12(__float_as_uint(vrd.origin.y));
+  optixSetPayload_13(__float_as_uint(vrd.origin.z));
+
+  optixSetPayload_14(__float_as_uint(vrd.direction.x));
+  optixSetPayload_15(__float_as_uint(vrd.direction.y));
+  optixSetPayload_16(__float_as_uint(vrd.direction.z));
+
+  optixSetPayload_17(vrd.done);
+  optixSetPayload_18(vrd.doneReason);
 
 }
 
@@ -903,30 +935,29 @@ static __forceinline__ __device__ bool traceOcclusion(
 
 static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) 
 {
-  //we hit the volume boundary, cast a volume ray at the hitpoint in the direction of the ray at for some distance
 
-  //get the max extent from the volumes AABB 
-  // divide by 100 to get the step size
-  // loop trough the volume and accumulate the volume's emission and scattering properties
-  // for(;;;) { volumePrd = copy(prd); traceVolume(volumePrd); if (volumePrd.done) break } prd = copy(volumePrd);
+  float max_distance = fmaxf(fmaxf(rt_data->aabb.maxX - rt_data->aabb.minX, rt_data->aabb.maxY - rt_data->aabb.minY), rt_data->aabb.maxZ - rt_data->aabb.minZ);
+  float step_size = max_distance / 100.0f;
 
-  //temporarily lets just send the ray through 
   prd.direction = ray_dir;
   prd.origin = hitPoint + prd.direction * 1e-4f;
 
   VolumePayLoadRayData vrd;
 
   vrd.attenuation = make_float3(1.f); // The attenuation is initialized to 1
+  vrd.attenuation = prd.attenuation;
   vrd.randomSeed = prd.randomSeed;
   vrd.step = 0;
   vrd.doneReason = DoneReason::NOT_DONE;
+  vrd.origin = hitPoint;
+  vrd.direction = ray_dir;
 
   traceVolume(
     params.handle,
     prd.origin,
     prd.direction,
     0.01f,  // tmin       
-    1e16f,  // tmax
+    step_size,  // tmax
     vrd
   );
 
@@ -1112,8 +1143,8 @@ extern "C" __global__ void __miss__volume__ms()
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadMissVolumePRD();
   
-  //lets do something silly for now and set the radiance to magenta
-  vrd.radiance = make_float3(1.0f, 0.0f, 1.0f);
+  //lets do something silly for now and set the radiance to red
+  vrd.attenuation *= make_float3(0.0f, 0.0, 1.0f);
   vrd.doneReason = DoneReason::ABSORBED;
   vrd.done = true;
 
@@ -1134,7 +1165,8 @@ extern "C" __global__ void __closesthit__volume__ch() {
 
  
   //printf("Volume closest hit invoked\n");
-
+  vrd.attenuation *= make_float3(0.0f, 0.0, 1.0f);
+  vrd.done = true;
 
  
 }
@@ -1218,8 +1250,7 @@ extern "C" __global__ void __closesthit__diffuse__ch()
     case BSDFType::BSDF_VOLUME: {
 
       ShadeVolume(prd, rt_data, P, N_0, ray_dir);
-      //prd radiance should be magenta right now, lets check with a printf
-      //printf("Volume radiance: %f, %f, %f\n", prd.radiance.x, prd.radiance.y, prd.radiance.z);
+
       
 
       break;
