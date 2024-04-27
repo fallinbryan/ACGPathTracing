@@ -169,6 +169,16 @@ struct HitGroupData {
   uint3* indices;
 };
 
+struct ShadingParams
+{
+  float3 normal;
+  float3 hitpoint;
+  float3 direction;
+  float3 attenuation;
+  unsigned int seed;
+  float3 origin;
+};
+
 struct VolumeSample
 {
   float4 rgba;

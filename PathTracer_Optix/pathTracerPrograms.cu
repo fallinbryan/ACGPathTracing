@@ -687,11 +687,14 @@ static __forceinline__ __device__ VolumeSample sampleVolume(VolumePayLoadRayData
 
 
 
-static __forceinline__ __device__ void ShadeDiffuse(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal) {
-  unsigned int seed = prd.randomSeed;
+static __forceinline__ __device__ void ShadeDiffuse(ShadingParams& prd, HitGroupData* rt_data) {
+
+  unsigned int seed = prd.seed;
   const bool      useImportanceSampling = params.useImportanceSampling;
   const float z1 = rnd(seed);
   const float z2 = rnd(seed);
+  const float3 hitPoint = prd.hitpoint;
+  const float3 normal = prd.normal;
   OrthonormalBasis onb(normal);
   float3 w_in;
 
@@ -711,11 +714,14 @@ static __forceinline__ __device__ void ShadeDiffuse(RadiancePayloadRayData& prd,
   prd.attenuation *= rt_data->diffuseColor;
 }
 
-static __forceinline__ __device__ void ShadeMetallic(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir)
+static __forceinline__ __device__ void ShadeMetallic(ShadingParams& prd, HitGroupData* rt_data)
 {
   const float     metalRoughOffset = params.metallicRoughness;
-  unsigned int    seed = prd.randomSeed;
+  unsigned int    seed = prd.seed;
   float           roughness = rt_data->roughness;
+  float3         normal = prd.normal;
+  float3         hitPoint = prd.hitpoint;
+  float3         ray_dir = prd.direction;
   roughness += metalRoughOffset;
   clamp(roughness, 0.001f, 1.0f);
 
@@ -738,13 +744,16 @@ static __forceinline__ __device__ void ShadeMetallic(RadiancePayloadRayData& prd
   prd.attenuation *= color;
 }
 
-static __forceinline__ __device__ void ShadeDielectric(RadiancePayloadRayData& prd, HitGroupData* rt_data, float3 hitPoint, float3 normal, float3 ray_dir) {  
+static __forceinline__ __device__ void ShadeDielectric(ShadingParams& prd, HitGroupData* rt_data) {
   const float     refractRoughOffset = params.refractiveRoughness;
-  unsigned int    seed = prd.randomSeed;
+  unsigned int    seed = prd.seed;
   const float     z1 = rnd(seed);
   const float     z2 = rnd(seed);
   float           roughness = rt_data->roughness;
   const float     IOR = rt_data->IOR;
+  float3          normal = prd.normal;
+  float3          ray_dir = prd.direction;
+  float3          hitPoint = prd.hitpoint;
 
   roughness += refractRoughOffset;
   clamp(roughness, 0.001f, 1.0f);
@@ -988,8 +997,7 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
   float max_distance = fmaxf(fmaxf(rt_data->aabb.maxX - rt_data->aabb.minX, rt_data->aabb.maxY - rt_data->aabb.minY), rt_data->aabb.maxZ - rt_data->aabb.minZ);
   float step_size = max_distance / 100.0f;
 
-  prd.direction = ray_dir;
-  prd.origin = hitPoint + prd.direction * 1e-4f;
+  float3 origin = hitPoint + ray_dir * .1f;
 
   VolumePayLoadRayData vrd;
 
@@ -998,12 +1006,12 @@ static __forceinline__ __device__ void ShadeVolume(RadiancePayloadRayData& prd, 
   vrd.randomSeed = prd.randomSeed;
   vrd.step = 0;
   vrd.doneReason = DoneReason::NOT_DONE;
-  vrd.origin = hitPoint;
+  vrd.origin = origin;
   vrd.direction = ray_dir;
   vrd.radiance = make_float3(.5f);
 
 
-  float3 debugStartPos = hitPoint;
+  float3 debugStartPos = origin;
   float3 debugAttenuation = prd.attenuation;
 
   for (int step = 0; step < 100; step++) {
@@ -1260,16 +1268,71 @@ extern "C" __global__ void __closesthit__volume__ch() {
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
 
+  HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
   const float3 ray_dir = optixGetWorldRayDirection();
-  const float3 ray_org = optixGetWorldRayOrigin();
-  const float3 hit_point = ray_org + ray_dir * optixGetRayTmax();
- 
+  const float3 ray_origin = optixGetWorldRayOrigin();
+  const float3 hit_point = ray_origin + ray_dir * optixGetRayTmax();
+  const BSDFType bsdfType = rt_data->bsdfType;
+
+  OptixAabb aabb = rt_data->aabb;
+
+  bool originInside = (ray_origin.x >= aabb.minX && ray_origin.x <= aabb.maxX &&
+    ray_origin.y >= aabb.minY && ray_origin.y <= aabb.maxY &&
+    ray_origin.z >= aabb.minZ && ray_origin.z <= aabb.maxZ);
+  bool originOutside = !originInside;
+  if(originOutside)
+  {
+    // so we will handle this case by NOP
+    return;
+  }
+
+  const uint3 idx = rt_data->indices[optixGetPrimitiveIndex()];
+  const float3 v0 = make_float3(rt_data->vertices[idx.x]);
+  const float3 v1 = make_float3(rt_data->vertices[idx.y]);
+  const float3 v2 = make_float3(rt_data->vertices[idx.z]);
+  const float3 N_0 = normalize(cross(v1 - v0, v2 - v0)); // Compute the normal
+  const float3 N = faceforward(N_0, -ray_dir, N_0);
+
+  ShadingParams shadingParams;
+  shadingParams.seed = vrd.randomSeed;
+  shadingParams.normal = N;
+  shadingParams.hitpoint = hit_point;
+  shadingParams.direction = ray_dir;
+  shadingParams.attenuation = vrd.attenuation;
+
+  //const char* hitside = originInside ? "inside" : "outside";
+  switch (bsdfType) {
+  case BSDFType::BSDF_VOLUME:
+    //printf("Hit the volume boundary from %s the volume\n", originInside ? "inside" : "outside");
+    vrd.done = true;
+    break;
+  case BSDFType::BSDF_DIFFUSE:
+    ShadeDiffuse(shadingParams, rt_data);
+    //printf("Hit a diffuse surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
+    break;
+  case BSDFType::BSDF_METALLIC:
+    ShadeMetallic(shadingParams, rt_data);
+    //printf("Hit a metallic surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
+    break;
+  case BSDFType::BSDF_REFRACTION:
+    shadingParams.normal = N_0;  // Use geometric normal for dielectrics
+    ShadeDielectric(shadingParams, rt_data);
+    //printf("Hit a refractive surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
+    break;
+  default:
+   
+    break;
+  }
+
+
+
+
   //printf("Volume closest hit invoked\n");
   //vrd.radiance *= make_float3(20.1f);
   vrd.attenuation *= make_float3(1.0f);
-  vrd.done = true;
+  ///vrd.done = true;
 
-  vrd.origin = hit_point - ray_dir * 1e-2f;
+  //vrd.origin = hit_point - ray_dir * 1e-2f;
 
   storeClosesthitVolumePRD(vrd);
 }
@@ -1332,21 +1395,29 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   unsigned int seed = prd.randomSeed;
 
+  ShadingParams shadingParams;
+  shadingParams.seed = prd.randomSeed;
+  shadingParams.normal = N;
+  shadingParams.hitpoint = P;
+  shadingParams.direction = ray_dir;
+  shadingParams.attenuation = prd.attenuation;
+
   switch (bsdfType)
   {
     case BSDFType::BSDF_DIFFUSE:
     {
-      ShadeDiffuse(prd, rt_data, P, N);
+      ShadeDiffuse(shadingParams, rt_data);
       break;
     }
     case BSDFType::BSDF_METALLIC:
     {
-      ShadeMetallic(prd, rt_data, P, N, ray_dir);
+      ShadeMetallic(shadingParams, rt_data);
       break;
     }
     case BSDFType::BSDF_REFRACTION:
     {
-      ShadeDielectric(prd, rt_data, P, N_0, ray_dir);
+      shadingParams.normal = N_0;
+      ShadeDielectric(shadingParams, rt_data);
       break;
 
     }
@@ -1366,6 +1437,10 @@ extern "C" __global__ void __closesthit__diffuse__ch()
       break;
     }
   }
+
+  prd.attenuation = shadingParams.attenuation;
+  prd.origin = shadingParams.origin;
+  prd.direction = shadingParams.direction;
 
   const float z1 = rnd(seed);
   const float z2 = rnd(seed);

@@ -321,7 +321,7 @@ void showCurrentFrame(sutil::CUDAOutputBuffer<uchar4>& output_buffer, sutil::GLD
 }
 
 void initCamera() {
-  g_camera.setEye(make_float3(276.37f, 274.42f, 163.224f));
+  g_camera.setEye(make_float3(278.0f, 273.0f, -900.0f));
   g_camera.setLookat(make_float3(278.0f, 273.0f, 330.0f));
   g_camera.setUp(make_float3(0.0f, 1.0f, 0.0f));
   g_camera.setFovY(35.0f);
