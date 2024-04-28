@@ -58,6 +58,11 @@ std::string objfilepath = "C:\\Users\\falli\\Documents\\CornellBoxWithMonkey.obj
 bool refreshAccumulationBuffer = false;
 
 sutil::Camera g_camera;
+sutil::Trackball trackball;
+
+// Mouse state
+int32_t mouse_button = -1;
+bool camera_changed = true;
 
 
 
@@ -118,6 +123,60 @@ float3 translateCamera(float3 translation, PathTraceParams* params) {
   params->cameraEye = g_camera.eye();
   return g_camera.eye();
 }
+
+
+static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+  double xpos, ypos;
+  glfwGetCursorPos(window, &xpos, &ypos);
+
+  if (action == GLFW_PRESS)
+  {
+    mouse_button = button;
+    trackball.startTracking(static_cast<int>(xpos), static_cast<int>(ypos));
+  }
+  else
+  {
+    mouse_button = -1;
+  }
+}
+
+static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+{
+  PathTraceParams* params = static_cast<PathTraceParams*>(glfwGetWindowUserPointer(window));
+
+  if (mouse_button == GLFW_MOUSE_BUTTON_LEFT)
+  {
+    trackball.setViewMode(sutil::Trackball::LookAtFixed);
+    trackball.updateTracking(static_cast<int>(xpos), static_cast<int>(ypos), params->width, params->height);
+    camera_changed = true;
+  }
+  else if (mouse_button == GLFW_MOUSE_BUTTON_RIGHT)
+  {
+    trackball.setViewMode(sutil::Trackball::EyeFixed);
+    trackball.updateTracking(static_cast<int>(xpos), static_cast<int>(ypos), params->width, params->height);
+    camera_changed = true;
+  }
+}
+
+static void scrollCallback(GLFWwindow* window, double xscroll, double yscroll)
+{
+  if (trackball.wheelEvent((int)yscroll))
+    camera_changed = true;
+}
+
+void handleCameraUpdate(PathTraceParams& params)
+{
+  if (!camera_changed)
+    return;
+  camera_changed = false;
+
+  g_camera.setAspectRatio(static_cast<float>(params.width) / static_cast<float>(params.height));
+  params.cameraEye = g_camera.eye();
+  g_camera.UVWFrame(params.cameraU, params.cameraV, params.cameraW);
+  refreshAccumulationBuffer = true;
+}
+
 
 
 static void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
@@ -261,6 +320,10 @@ void initializeTheLaunch(PathTracerState& state) {
 void updateState(sutil::CUDAOutputBuffer<uchar4>& output_buffer, PathTracerState& state)
 {
  
+  if (camera_changed) {
+    handleCameraUpdate(state.params);
+  }
+
   if (refreshAccumulationBuffer)
   {
     refreshAccumulationBuffer = false;
@@ -325,6 +388,15 @@ void initCamera() {
   g_camera.setLookat(make_float3(278.0f, 273.0f, 330.0f));
   g_camera.setUp(make_float3(0.0f, 1.0f, 0.0f));
   g_camera.setFovY(35.0f);
+
+  trackball.setCamera(&g_camera);
+  trackball.setMoveSpeed(10.0f);
+  trackball.setReferenceFrame(
+    make_float3(1.0f, 0.0f, 0.0f),
+    make_float3(0.0f, 0.0f, 1.0f),
+    make_float3(0.0f, 1.0f, 0.0f)
+  );
+  trackball.setGimbalLock(true);
 }
 
 static void context_log_callback(unsigned int level, const char* tag, const char* message, void* /*callbackdata */)
@@ -851,7 +923,14 @@ void main() {
 
       GLFWwindow* window = sutil::initUI( "Path Tracer", state.params.width, state.params.height );
       glfwSetWindowUserPointer(window, &state.params);
+      
+      glfwSetMouseButtonCallback(window, mouseButtonCallback);
+      glfwSetCursorPosCallback(window, cursorPosCallback);
+      glfwSetScrollCallback(window, scrollCallback);
+      
       glfwSetKeyCallback(window, keyCallback);
+
+
 
       {
         sutil::CUDAOutputBuffer<uchar4> output_buffer(
