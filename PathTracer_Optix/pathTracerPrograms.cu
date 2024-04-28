@@ -680,7 +680,7 @@ static __forceinline__ __device__ VolumeSample sampleSphereVolume(VolumePayLoadR
 
   if (normalizedDistance < 1.0f) {
     // Density decreases linearly from the center to the edge of the sphere
-    sample.density = 1.0f - normalizedDistance;
+    sample.density = powf(1.0f - normalizedDistance, 2.0f);
     // Color remains constant magenta with full opacity
     sample.rgba = make_float4(1.0f, 0.0f, 1.0f, 1.0f);
   }
@@ -1042,10 +1042,7 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
   vrd.direction = ray_dir;
   vrd.radiance = make_float3(.5f);
 
-  //check the volume aabb with a debug print
-  //printf("Volume AABB: (%f, %f, %f) - (%f, %f, %f)\n", rt_data->aabb.minX, rt_data->aabb.minY, rt_data->aabb.minZ, rt_data->aabb.maxX, rt_data->aabb.maxY, rt_data->aabb.maxZ);
-
-  for (int step = 0; step <= 1; step++) {
+  for (int step = 0; step <= 100; step++) {
     vrd.volumeAabb = volumeAabb;
     vrd.step = step;
     traceVolume(
@@ -1056,54 +1053,16 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
       step_size,  // tmax
       vrd
     );
-    //if(step > 99) printf("Current Step: %i\n", step);
-      //for debugging print the origin and the direction on one line
-      //printf("Origin: %f %f %f, Direction: %f %f %f\n", 
-      //  vrd.origin.x, vrd.origin.y, vrd.origin.z, 
-      //  vrd.direction.x, vrd.direction.y, vrd.direction.z
-      //);
-      // 
- /*   printf("Current Step: %i, Start Pos: (%f,%f,%f) Current Pos: (%f, %f, %f) Accumulated Travel Distance: %f\n", 
-      step,
-      debugStartPos.x, debugStartPos.y, debugStartPos.z,  
-      vrd.origin.x, vrd.origin.y, vrd.origin.z,
-      length(vrd.origin - debugStartPos)
-    );*/
-
-    //printf("Current Step: %i, Start Acc: (%f,%f,%f) Current acc: (%f, %f, %f) attenuation Distance: %f\n", 
-    //  step,
-    //  debugAttenuation.x, debugAttenuation.y, debugAttenuation.z,
-    //  vrd.attenuation.x, vrd.attenuation.y, vrd.attenuation.z,
-    //  length(vrd.attenuation - debugAttenuation)
-    //);
 
     if (vrd.done) {
-      //printf("Done Reason: %s\n", doneReasonToString(vrd.doneReason));
-
       break;
     }
   }
 
-  //if the accumulated attenutation is the same as the starting attenuation, then nothing in the volume was hit so we will 
-  //do just a strating pass through the volume
-  
-  if (vrd.attenuation.x == 1.0f && vrd.attenuation.y == 1.0f && vrd.attenuation.z == 1.0f) {
-    //printf("Nothing in the volume was hit\n");
-    prd.origin = hitPoint + prd.direction * 1e-4f;
-    prd.direction = ray_dir;
-  }
-  else {
-    //printf("Something in the volume was hit\n");
-    //prd.radiance = vrd.radiance;
-    prd.attenuation *= vrd.attenuation;
-    prd.origin = vrd.origin;
-    prd.direction = vrd.direction;
-  }
-
-  //pass through
-  //prd.attenuation = init_attenutation;
-  //prd.origin = hitPoint;
-  //prd.direction = ray_dir;
+  //release control back up to regular path tracing
+  prd.attenuation *= vrd.attenuation;
+  prd.origin = vrd.origin;
+  prd.direction = vrd.direction;
 
 }
 
@@ -1295,41 +1254,17 @@ static __forceinline__ __device__ bool isPointNearEdge(const float3& sample_poin
 
 extern "C" __global__ void __miss__volume__ms()
 {
-
-  
-
-  
+ 
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadMissVolumePRD();
-
-  
+ 
 
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_org = optixGetWorldRayOrigin();
   const float ray_tmax = optixGetRayTmax();
   const float3 sample_pos = ray_org + ray_dir * ray_tmax;
 
-  //something is very wrong with aabb here, lets debug print the extetns of the volume
-  //every call has a different aabb, so we need to figure out why that is happening
-  //printf("Volume AABB: %f %f %f %f %f %f\n", 
-  //  vrd.volumeAabb.minX, vrd.volumeAabb.minY, vrd.volumeAabb.minZ, 
-  //  vrd.volumeAabb.maxX, vrd.volumeAabb.maxY, vrd.volumeAabb.maxZ
-  //);
   unsigned int seed = vrd.randomSeed;
-  //
-  //vrd.origin = ray_org + ray_dir * ray_tmax;
-  //vrd.direction = ray_dir;
-
-  //vrd.attenuation *= 1.0f;
-  //vrd.radiance *=  .9f;
-
-  //vrd.step += 1;
-  //if (rnd(seed) > 0.5f)
-  //{
-  //  //printf("Step is  acummulating as expected\n");
-  //  vrd.doneReason = DoneReason::ABSORBED;
-  //  vrd.done = true;
-  //} 
 
   float3 aabb_center = make_float3(
      (vrd.volumeAabb.maxX + vrd.volumeAabb.minX) / 2.0f,
@@ -1338,39 +1273,29 @@ extern "C" __global__ void __miss__volume__ms()
   );
 
   //lets also highlight the edges of the volume with a red color for debugging
-
-// first check if the sample_pos is within a certain distance of the volume boundary
-// if it is, we will highlight it with a red color
-  float radius = 2.f;
-
-  
-  if (isPointNearEdge(sample_pos, vrd.volumeAabb, radius))
+  float edgeRadius = 2.f;
+  if (isPointNearEdge(sample_pos, vrd.volumeAabb, edgeRadius))
   {
-    //printf("Distance: %f\n", distance);
     vrd.attenuation *= make_float3(1.0f, 0.0f, 0.0f);
   }
 
-  VolumeSample sample = sampleSphereVolume(vrd, sample_pos, ray_dir, aabb_center, 140.0f);
+  VolumeSample sample = sampleSphereVolume(vrd, sample_pos, ray_dir, aabb_center, 50.0f);
 
-  if(sample.density == 0)
+  if (sample.density > 0)
   {
-    vrd.origin = sample_pos;
-    vrd.direction = ray_dir;
-    storeMissVolumePRD(vrd);
-    return;
+    // Apply Beer-Lambert law for absorption based on the density.
+    float absorptionCoefficient = -logf(max(1.0f - sample.density, 0.001f)); // Avoid -inf or NaN
+    float3 absorbedColor = make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
+
+    // Assuming the light source color is white, which means it contains all colors equally,
+    // the absorbed color will tint the attenuation.
+    vrd.attenuation *= absorbedColor * make_float3(expf(-absorptionCoefficient));
   }
-
-  vrd.attenuation *= make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
-  
-
 
   vrd.origin = sample_pos;
   vrd.direction = ray_dir;
   storeMissVolumePRD(vrd);
-  
-
-
-
+ 
 }
 
 extern "C" __global__ void __closesthit__volume__ch() {
