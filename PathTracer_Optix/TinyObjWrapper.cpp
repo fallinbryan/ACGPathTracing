@@ -65,12 +65,12 @@ OptixAabb GetAABBFromVerts(const std::vector<float3>& vertices)
 {
   
   OptixAabb aabb;
-  aabb.maxX = getMax(VectorIDX::X, vertices);
-  aabb.maxY = getMax(VectorIDX::Y, vertices);
-  aabb.maxZ = getMax(VectorIDX::Z, vertices);
   aabb.minX = getMin(VectorIDX::X, vertices);
   aabb.minY = getMin(VectorIDX::Y, vertices);
   aabb.minZ = getMin(VectorIDX::Z, vertices);
+  aabb.maxX = getMax(VectorIDX::X, vertices);
+  aabb.maxY = getMax(VectorIDX::Y, vertices);
+  aabb.maxZ = getMax(VectorIDX::Z, vertices);
   return aabb;
 }
 
@@ -332,7 +332,11 @@ void TinyObjWrapper::_updateAabbs() {
         std::vector<float3> vertices;
         for (auto& index : shape.mesh.indices)
         {
-          float3 v = {reader.GetAttrib().vertices[index.vertex_index * 3], reader.GetAttrib().vertices[index.vertex_index * 3 + 1], reader.GetAttrib().vertices[index.vertex_index * 3 + 2]};
+          float3 v = { 
+            reader.GetAttrib().vertices[index.vertex_index * 3], 
+            reader.GetAttrib().vertices[index.vertex_index * 3 + 1], 
+            reader.GetAttrib().vertices[index.vertex_index * 3 + 2]
+          };
           vertices.push_back(v);
         }
         aabbs.push_back(GetAABBFromVerts(vertices));

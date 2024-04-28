@@ -506,7 +506,7 @@ void createModule(PathTracerState& state) {
 
   OptixModuleCompileOptions module_compile_options = {};
 
-  module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;/// OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // TODO: Change this to 3 for release builds
+  module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;/// OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // TODO: Change this to OPTIX_COMPILE_OPTIMIZATION_LEVEL_3 for release builds
   module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE; // OPTIX_COMPILE_DEBUG_LEVEL_FULL;  // TODO: Change this to OPTIX_COMPILE_DEBUG_LEVEL_NONE for release builds
 
   module_compile_options.numPayloadTypes = 2; 
@@ -740,8 +740,7 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj)
         const int shaderBindingTableIndex = i * NUM_RAYTYPES + j;
         OPTIX_CHECK(optixSbtRecordPackHeader(state.hitgroup_prog_groups[j], &hitgroup_records[shaderBindingTableIndex]));
 
-
-
+      
         hitgroup_records[shaderBindingTableIndex].data.emissionColor = materials[i].emission;
         hitgroup_records[shaderBindingTableIndex].data.diffuseColor = materials[i].diffuse;
         hitgroup_records[shaderBindingTableIndex].data.bsdfType = materials[i].bsdfType;
@@ -750,7 +749,9 @@ void createShaderBindingTable(PathTracerState& state, TinyObjWrapper obj)
         hitgroup_records[shaderBindingTableIndex].data.metallic = materials[i].metallic;
         hitgroup_records[shaderBindingTableIndex].data.vertices = reinterpret_cast<float4*>(state.d_vertices);
         hitgroup_records[shaderBindingTableIndex].data.indices = reinterpret_cast<uint3*>(state.d_indices);
-        hitgroup_records[shaderBindingTableIndex].data.aabb = aabbs[i];
+        hitgroup_records[shaderBindingTableIndex].data.aabb = aabbs[10]; // <-- This is HACK, I need to fix this.  I need to get the AABB for the current object, except this block is associating materials with triangles, the pipeline has no concept of objects. I need to using the sbt index to get the correct AABB for the current object.
+
+
       }
     }
   }
