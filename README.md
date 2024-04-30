@@ -1,8 +1,14 @@
-# Path Tracing Renderer - Advanced Computer Graphics at Mississppi State University - Assignment 4
+# Path Tracing Renderer - Advanced Computer Graphics at Mississppi State University - Final Assignment
 
 ## Overview
 
 This project is a path tracing renderer that loads OBJ files and uses path tracing to render scenes with diffuse, refractive, and conductive BRDFs. It aims to provide a realistic simulation of light interaction with various materials by implementing advanced rendering techniques.
+
+## Newly Added Feature
+- **Voume Rendering**
+For NeRF integration
+![NeRF Fountain](NerfFounta.png)
+Notice the shadow beneath the NeRF volume, also notice the the refractive projection of it on the crystal. This is no photoshopping ladies and gentlemen. This is a NeRF Volume fully integrated into the 3D path traced world.
 
 ## Features
 
@@ -14,7 +20,6 @@ The renderer supports several modes of operation, allowing users to experiment w
 
 - **Bounce Control**: Adjusts the maximum number of bounces for rays, enabling users to balance between render quality and performance.
 
-### Added Features
 
 - **Rough Metal BRDF**
 - **Rough Dieltric BRDF**
