@@ -41,22 +41,20 @@ static OptixSettings copySettings(const OptixSettings& src)
 
 #pragma region OptixManager Public Functions
 
-  OptixManager::OptixManager(const OptixSettings& settings)
-    : _settings(copySettings(settings)),
-      _params{ settings.scene_width, settings.scene_height, settings.max_depth,
-            settings.useDirectLighting, settings.useImportanceSampling },
-      _output_buffer(output_buffer_type, settings.scene_width, settings.scene_height),
-      ui(this)
+  OptixManager::OptixManager(const OptixSettings& settings) :
+    _settings(copySettings(settings)),
+    ui(this)
   {
     // Constructor body
-    ui.width = settings.scene_width;
-    ui.height = settings.scene_height;
-
-    _state.params.width = _settings.scene_width;
-    _state.params.height = _settings.scene_height;
+    _state.params.width = settings.scene_width;
+    _state.params.height = settings.scene_height;
+    _state.params.maxDepth = settings.max_depth;
     _state.params.useDirectLighting = true;
     _state.params.useImportanceSampling = true;
-    _state.params.maxDepth = _settings.max_depth;
+
+    ui.width = settings.scene_width;
+    ui.height = settings.scene_height;
+    
   }
 
   OptixManager::~OptixManager() {
@@ -114,31 +112,32 @@ static OptixSettings copySettings(const OptixSettings& src)
       LOG_ERROR("Failed to initialize OpenGL");
       return false;
     } 
+    _output_buffer = std::make_shared<sutil::CUDAOutputBuffer<uchar4>>(output_buffer_type, ui.width, ui.height);
 
-    _output_buffer.setStream(_state.stream);
+    _output_buffer->setStream(_state.stream);
 
     return true;
   }
 
   void OptixManager::set_camera_eye(float3 eye)
   {
-    _params.cameraEye = eye;
+    _state.params.cameraEye = eye;
   }
 
   void OptixManager::update_camera_UVW(sutil::Camera& g_camera)
   {
-    g_camera.UVWFrame(_params.cameraU, _params.cameraV, _params.cameraW);
+    g_camera.UVWFrame(_state.params.cameraU, _state.params.cameraV, _state.params.cameraW);
   }
 
   void OptixManager::increase_recursion_depth()
   {
 
-    _params.maxDepth = std::max(1, (int)_settings.max_depth - 1);
+    _state.params.maxDepth = std::max(1, (int)_settings.max_depth - 1);
   }
 
   void OptixManager::decrease_recurstion_depth()
   {
-    _params.maxDepth = std::min((int)_settings.max_depth, (int)_params.maxDepth + 1);
+    _state.params.maxDepth = std::min((int)_settings.max_depth, (int)_state.params.maxDepth + 1);
   }
 
   void OptixManager::dispose()
@@ -148,7 +147,7 @@ static OptixSettings copySettings(const OptixSettings& src)
         _state.miss_prog_groups[0],
         _state.miss_prog_groups[1],
         _state.hitgroup_prog_groups[0],
-        _state.hitgroup_prog_groups[2]
+        _state.hitgroup_prog_groups[1]
     };
     OPTIX_CHECK(optixPipelineDestroy(_state.pipeline));
 
@@ -210,37 +209,37 @@ static OptixSettings copySettings(const OptixSettings& src)
 
   void OptixManager::set_use_direct_lighting(bool useDirectLighting)
   {
-    _params.useDirectLighting = useDirectLighting;
+    _state.params.useDirectLighting = useDirectLighting;
   }
 
   void OptixManager::toggle_direct_lighting()
   {
-    _params.useDirectLighting = !_params.useDirectLighting;
+    _state.params.useDirectLighting = !_state.params.useDirectLighting;
   }
 
   void OptixManager::set_use_importance_sampling(bool useImportanceSampling)
   {
-    _params.useImportanceSampling = useImportanceSampling;
+    _state.params.useImportanceSampling = useImportanceSampling;
   }
 
   void OptixManager::toggle_importance_sampling()
   {
-    _params.useImportanceSampling = !_params.useImportanceSampling;
+    _state.params.useImportanceSampling = !_state.params.useImportanceSampling;
   }
 
   bool OptixManager::use_direct_lighting() const
   {
-    return _params.useDirectLighting;
+    return _state.params.useDirectLighting;
   }
 
   bool OptixManager::use_importance_sampling() const
   {
-    return _params.useImportanceSampling;
+    return _state.params.useImportanceSampling;
   }
 
   int OptixManager::max_depth() const
   {
-    return _params.maxDepth;
+    return _state.params.maxDepth;
   }
 
 #pragma endregion
@@ -812,7 +811,7 @@ static OptixSettings copySettings(const OptixSettings& src)
       LOG_ERROR(e.what());
       return false;
     }
-    tlog::debug() << "Optix State updated";
+    
     return true;
   }
 
@@ -820,7 +819,7 @@ static OptixSettings copySettings(const OptixSettings& src)
   {
     try
     {
-      uchar4* result_buffer_data = _output_buffer.map();
+      uchar4* result_buffer_data = _output_buffer->map();
 
       _state.params.frameBuffer = result_buffer_data;
 
@@ -842,13 +841,19 @@ static OptixSettings copySettings(const OptixSettings& src)
         1
       ));
 
-      _output_buffer.unmap();
+      _output_buffer->unmap();
       CUDA_SYNC_CHECK();
     }
     catch (const std::exception& e)
     {
       LOG_ERROR(e.what());
-      return false;
+      cudaError_t error = cudaGetLastError();
+      if (error != cudaSuccess) {
+        
+        LOG_ERROR(cudaGetErrorString(error));
+      }
+
+      throw e;
     }
     
     return true;
@@ -918,6 +923,9 @@ static OptixSettings copySettings(const OptixSettings& src)
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetKeyCallback(window, keyCallback);
+
+    gl_display = std::make_shared<sutil::GLDisplay>();
+
   }
   catch (const std::exception& e)
   {
@@ -929,7 +937,7 @@ static OptixSettings copySettings(const OptixSettings& src)
   return true;
 }
 
-  bool OptixManager::GLManager::showCurrentFrame(sutil::CUDAOutputBuffer<uchar4>& output_buffer)
+  bool OptixManager::GLManager::showCurrentFrame(std::shared_ptr<sutil::CUDAOutputBuffer<uchar4>> output_buffer)
   {
     try
     {
@@ -937,12 +945,12 @@ static OptixSettings copySettings(const OptixSettings& src)
       int frame_resolution_y = 0;
       glfwGetFramebufferSize(window, &frame_resolution_x, &frame_resolution_y);
 
-      gl_display.display(
-        output_buffer.width(),
-        output_buffer.height(),
+      gl_display->display(
+        output_buffer->width(),
+        output_buffer->height(),
         frame_resolution_x,
         frame_resolution_y,
-        output_buffer.getPBO()
+        output_buffer->getPBO()
       );
     }
     catch (const std::exception& e)

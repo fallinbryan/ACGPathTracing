@@ -1,9 +1,11 @@
 //#include <glad/glad.h>  // Needs to be included before gl_interop
 
+#define NO_OPTIX_DEFINES
 #include "common.h"
 #include "AppController.h"
 #include "GLFCallbacks.h"
 #include "tinylogger.h"
+#undef NO_OPTIX_DEFINES
 
 
 

@@ -65,3 +65,15 @@ add_custom_target(AppConfigResource ALL
     SOURCES ${APPCONFIG_FILE}
     COMMENT "Adding AppConfig.cfg to Visual Studio Solution Explorer under Resources"
 )
+
+ # Debug specific settings
+ target_compile_definitions(${target_name} PRIVATE 
+ $<$<CONFIG:Debug>:DEBUG_MODE>)
+
+# Release specific settings
+target_compile_definitions(${target_name} PRIVATE 
+$<$<CONFIG:Release>:RELEASE_MODE>)
+
+# Release with Debug Information
+target_compile_definitions(${target_name} PRIVATE 
+$<$<CONFIG:RelWithDebInfo>:RELEASE_MODE;DEBUG_INFORMATION>)

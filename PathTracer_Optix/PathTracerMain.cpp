@@ -1,4 +1,3 @@
-#include "common.h"
 #include "tinylogger.h"
 #include "TinyObjWrapper.h"
 #include "ConfigReader.h"
@@ -22,15 +21,23 @@ void context_log_callback(unsigned int level, const char* tag, const char* messa
 }
 
 
-void main() {
-   
+int main() {
+    tlog::debug() << "Starting Application...";
+
     std::string CONFIG_FILE = "AppConfig.cfg";
+    
+    tlog::debug() << "Reading Config File: " << CONFIG_FILE;
     ConfigReader config(CONFIG_FILE);
     std::string objfilepath = config.getString("INPUT OBJ FILE");
+    
+    tlog::debug() << "Reading OBJ File: " << objfilepath;
+    TinyObjWrapper obj(objfilepath);
+    
     OptixSettings optix_settings = {};
     
+
     optix_settings.logCallback = context_log_callback;
-    optix_settings.scene = TinyObjWrapper(objfilepath);
+    optix_settings.scene = obj;
     optix_settings.scene_width = config.getInt("OUTPUT WIDTH");
     optix_settings.scene_height = config.getInt("OUTPUT HEIGHT");;
     optix_settings.samples_per_launch = config.getInt("SAMPLES PER PIXEL");
@@ -38,15 +45,22 @@ void main() {
     optix_settings.useDirectLighting = true;
     optix_settings.useImportanceSampling = true;
 
-
-    OptixManager* optix_manager = AppController::getInstance().setOptixManager(optix_settings);
  
     try {
 
-      optix_manager->init();
+      tlog::debug() << "Creating OptixManager...";
+      OptixManager* optix_manager = AppController::getInstance().setOptixManager(optix_settings);
 
+      tlog::debug() << "Initializing OptixManager...";
+      if (!optix_manager->init()) {
+        tlog::error() << "Unable to initialize Optix";
+        return 1;
+       }
+
+      tlog::debug() << "Starting Render Loop...";
       optix_manager->render_loop();
 
+      tlog::debug() << "Printing Benchmark...";
       optix_manager->print_benchmark();
 
     }
@@ -54,4 +68,5 @@ void main() {
       tlog::error() << "Caught exception: " << e.what();
     }
     
+    return 0;
 }

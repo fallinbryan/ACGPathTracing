@@ -11,10 +11,7 @@
 
 
 
-
-#include "OptixManager.h"
-
-
+#include "pathTracer.h"
 #include "random.h"
 
 #include <sutil/vec_math.h>

@@ -1,8 +1,10 @@
 #ifndef APP_CONTROLLER_H
 #define APP_CONTROLLER_H
 
+#define OPTIX_MAN_ONLY
 #include "OptixManager.h"
 #include <memory>
+#undef  OPTIX_MAN_ONLY
 
 class AppController {
 public:
