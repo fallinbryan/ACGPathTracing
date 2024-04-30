@@ -11,7 +11,7 @@
  */
 
 
-#pragma once
+#pragma once TINY_OBJ_WRAPPER_H
 
 
 

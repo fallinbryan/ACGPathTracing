@@ -27,13 +27,21 @@
 #
 
 OPTIX_add_sample_executable(optixPathTracer target_name
-  pathTracerPrograms.cu
-  PathTracerMain.cpp
-  pathTracer.h
-  TinyObjWrapper.h
-  TinyObjWrapper.cpp
-  ConfigReader.h
-  ConfigReader.cpp
+PathTracerMain.cpp
+pathTracerPrograms.cu
+common.h
+common.cpp
+AppController.h
+AppController.cpp
+ConfigReader.h
+ConfigReader.cpp
+GLFCallbacks.h
+GLFCallbacks.cpp
+OptixManager.h
+OptixManager.cpp
+TinyObjWrapper.h
+TinyObjWrapper.cpp
+pathTracer.h
   OPTIONS -rdc true
 )
 

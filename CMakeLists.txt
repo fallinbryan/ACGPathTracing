@@ -542,7 +542,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/util)
 # Just make sure you rename all the occurances of the sample's name in the C code as well
 # and the CMakeLists.txt file.
 
-add_subdirectory( PathTracer_Optix              )
+add_subdirectory( PathTracer_Optix )
 
 
 # Our sutil library.  The rules to build it are found in the subdirectory.
@@ -556,6 +556,7 @@ add_subdirectory(support)
 configure_file(${CMAKE_SOURCE_DIR}/AppConfig.cfg ${CMAKE_SOURCE_DIR}/PathTracer_Optix/AppConfig.cfg COPYONLY)
 
 
+add_definitions(-DGLFW_INCLUDE_NONE)
 
 
 #################################################################

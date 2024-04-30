@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once  CONFIG_READER_H
 
 #include <string>
 #include <map>
