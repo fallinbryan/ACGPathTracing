@@ -291,6 +291,7 @@ static __forceinline__ __device__ void storeClosesthitVolumePRD(VolumePayLoadRay
 
   optixSetPayload_17(vrd.done);
   optixSetPayload_18(vrd.doneReason);
+  optixSetPayload_19(__float_as_uint(vrd.tMax));
 
 }
 
@@ -430,7 +431,7 @@ static __forceinline__ __device__ void jankun_cosine_sample_hemisphere(const flo
   p.y = r * sinf(phi);
 
   // Adjust z based on the exact mathematics from the lecture
-  p.z = 1.0f - p.x * p.x - p.y * p.y; 
+  p.z = 1.0f - p.x * p.x - p.y * p.y;
 }
 
 /**
@@ -473,17 +474,17 @@ static __forceinline__ __device__ void cosine_sample_hemisphere(const float eta1
  * @param u2 A random float value between 0 and 1.
  * @param wi The output sampled direction within the hemisphere.
  */
-static __forceinline__ __device__ void uniform_sample_hemisphere(const float u1, const float u2, float3& wi) 
+static __forceinline__ __device__ void uniform_sample_hemisphere(const float u1, const float u2, float3& wi)
 {
-  
+
   //The monte carlo probability that this direction was sampled is 2 / PI
   //The reflectance of the lambertian surface is R / PI
 
   const float theta = acosf(u1);
   const float phi = 2.0f * M_PIf * u2;
-  wi.x =  cosf(phi) * sqrtf(1-u1*u1);
-  wi.y =  sinf(phi) * sqrtf(1-u1*u1);
-  wi.z =  u1;
+  wi.x = cosf(phi) * sqrtf(1 - u1 * u1);
+  wi.y = sinf(phi) * sqrtf(1 - u1 * u1);
+  wi.z = u1;
 
 }
 
@@ -503,18 +504,18 @@ static __forceinline__ __device__ const char* doneReasonToString(DoneReason reas
 {
   switch (reason)
   {
-    case DoneReason::MISS:
-      return "MISS";
-    case DoneReason::MAX_DEPTH:
-      return "MAX_DEPTH";
-    case DoneReason::RUSSIAN_ROULETTE:
-      return "RUSSIAN_ROULETTE";
-    case DoneReason::NOT_DONE:
-      return "NOT_DONE";
-    case DoneReason::VOLUME_BOUNDARY:
-      return "VOLUME_BOUNDARY";
-    default:
-      return "UNKNOWN";
+  case DoneReason::MISS:
+    return "MISS";
+  case DoneReason::MAX_DEPTH:
+    return "MAX_DEPTH";
+  case DoneReason::RUSSIAN_ROULETTE:
+    return "RUSSIAN_ROULETTE";
+  case DoneReason::NOT_DONE:
+    return "NOT_DONE";
+  case DoneReason::VOLUME_BOUNDARY:
+    return "VOLUME_BOUNDARY";
+  default:
+    return "UNKNOWN";
   }
 }
 
@@ -688,6 +689,49 @@ static __forceinline__ __device__ VolumeSample sampleSphereVolume(VolumePayLoadR
   return sample;
 }
 
+static __forceinline__ __device__ VolumeSample sampleUniformVolume(VolumePayLoadRayData& vrd, float3 sample_pos, float3 direction, float3 center, float radius)
+{
+  return { make_float4(1.0f, 1.0f, 1.0f, 0.1f), 0.02f };
+}
+
+
+static __forceinline__ __device__ VolumeSample sampleVolumeData(float3 sample_pos, const OptixAabb& volume_aabb) {
+  VolumeSample sample = { make_float4(0.0f), 0.0f }; // Initialize with default zero values
+
+  // Calculate normalized position within the AABB
+  float3 normalized_pos = make_float3(
+    (sample_pos.x - volume_aabb.minX) / (volume_aabb.maxX - volume_aabb.minX),
+    (sample_pos.y - volume_aabb.minY) / (volume_aabb.maxY - volume_aabb.minY),
+    (sample_pos.z - volume_aabb.minZ) / (volume_aabb.maxZ - volume_aabb.minZ)
+  );
+
+  // Convert normalized position to voxel indices
+  int ix = static_cast<int>(normalized_pos.x * (params.volumeWidth - 1));
+  int iy = static_cast<int>(normalized_pos.y * (params.volumeHeight - 1));
+  int iz = static_cast<int>(normalized_pos.z * (params.volumeDepth - 1));
+
+
+  // Check if indices are within the volume data bounds
+  if (ix >= 0 && ix < params.volumeWidth &&
+    iy >= 0 && iy < params.volumeHeight &&
+    iz >= 0 && iz < params.volumeDepth) {
+    size_t index = (iy * params.volumeDepth * params.volumeWidth + iz * params.volumeWidth + ix) * 4;
+    // 4 floats per voxel (RGBA)
+    if (index + 3 < params.volumeSz / sizeof(float)) {
+      sample.rgba.x = params.volumeData[index];
+      sample.rgba.y = params.volumeData[index + 1];
+      sample.rgba.z = params.volumeData[index + 2];
+      sample.rgba.w = params.volumeData[index + 3];
+
+      sample.density = sample.rgba.w;
+    }
+  }
+
+  return sample;
+}
+
+
+
 
 
 
@@ -823,7 +867,7 @@ static __forceinline__ __device__ void traceRadiance(
   u4 = prd.depth;
   u18 = prd.doneReason;
 
-  
+
   optixTraverse(
     RADIANCE_PAYLOAD_TYPE,
     handle,
@@ -838,7 +882,7 @@ static __forceinline__ __device__ void traceRadiance(
     2,                      // SBT stride
     0,                      // missSBTIndex
     u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18);
-  
+
   // Note:
   // This demonstrates the usage of the OptiX shader execution reordering 
   // (SER) API.  In the case of this computationally simple shading code, 
@@ -848,7 +892,7 @@ static __forceinline__ __device__ void traceRadiance(
     // Application specific coherence hints could be passed in here
   );
 
-  
+
   optixInvoke(
     RADIANCE_PAYLOAD_TYPE,
     u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18
@@ -1025,9 +1069,9 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
   const OptixAabb volumeAabb = rt_data->aabb;
 
   float max_distance = fmaxf(fmaxf(volumeAabb.maxX - volumeAabb.minX, volumeAabb.maxY - volumeAabb.minY), volumeAabb.maxZ - volumeAabb.minZ);
-  float step_size = max_distance / 100.0f;
+  float step_size = max_distance / 100;
 
-  float3 origin = hitPoint + ray_dir * .1f;
+  float3 origin = hitPoint + ray_dir * .001f;
 
   VolumePayLoadRayData vrd;
 
@@ -1037,16 +1081,17 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
   vrd.doneReason = DoneReason::NOT_DONE;
   vrd.origin = origin;
   vrd.direction = ray_dir;
-  vrd.radiance = make_float3(.5f);
+  vrd.radiance = prd.radiance;
 
   for (int step = 0; step <= 100; step++) {
     vrd.volumeAabb = volumeAabb;
     vrd.step = step;
+    vrd.tMax = step_size;
     traceVolume(
       params.handle,
       vrd.origin,
       vrd.direction,
-      0.1f,  // tmin       
+      0.001f,  // tmin       
       step_size,  // tmax
       vrd
     );
@@ -1057,7 +1102,16 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
   }
 
   //release control back up to regular path tracing
+  if (vrd.done && vrd.doneReason == DoneReason::ABSORBED) {
+    prd.done = vrd.done;
+    prd.doneReason = vrd.doneReason;
+    prd.attenuation = vrd.attenuation;
+    prd.radiance = vrd.radiance;
+    prd.radiance = clamp(prd.radiance, 0.0f, 1.0f);
+  }
   prd.attenuation *= vrd.attenuation;
+  //prd.emission = make_float3(1.0f);
+  prd.attenuation = clamp(prd.attenuation, 0.0f, 1.0f);
   prd.origin = vrd.origin;
   prd.direction = vrd.direction;
 
@@ -1078,10 +1132,10 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
  * on the intensity of the ray. If the ray's intensity is below a certain threshold, it has a certain
  * probability of being terminated. This helps to reduce the computational cost by not tracing rays
  * that contribute little to the final image.
- * 
+ *
  * This function was originally provided by the NVidia Optix toolkit, but has been modified to better suit the needs of this specific application.
  *
- * @param params The parameters for the path tracing, including the image width, height, camera parameters, 
+ * @param params The parameters for the path tracing, including the image width, height, camera parameters,
  *               and the current frame index.
  */
 extern "C" __global__ void __raygen__rg()
@@ -1096,7 +1150,7 @@ extern "C" __global__ void __raygen__rg()
   const uint3  idx = optixGetLaunchIndex();
   const int    subframe_index = params.currentFrameIdx;
   const unsigned int maxDepth = params.maxDepth;
-  
+
 
   unsigned int seed = tea<4>(idx.y * w + idx.x, subframe_index);
 
@@ -1104,7 +1158,7 @@ extern "C" __global__ void __raygen__rg()
   int i = params.samplesPerPixel;
   RadiancePayloadRayData prd;
 
-  
+
 
   do
   {
@@ -1115,7 +1169,7 @@ extern "C" __global__ void __raygen__rg()
       (static_cast<float>(idx.x) + subpixel_jitter.x) / static_cast<float>(w),
       (static_cast<float>(idx.y) + subpixel_jitter.y) / static_cast<float>(h)
     ) - 1.0f;
-    
+
     float3 ray_direction = normalize(d.x * U + d.y * V + W);
     float3 ray_origin = eye;
 
@@ -1137,7 +1191,7 @@ extern "C" __global__ void __raygen__rg()
         1e16f,  // tmax
         prd
       );
-      
+
       // at this point the PRD should be updated with the result of the trace
       result += prd.emissionColor;
       result += prd.radiance * prd.attenuation;
@@ -1148,8 +1202,8 @@ extern "C" __global__ void __raygen__rg()
 
       const bool done = prd.done || russianRoulette || prd.depth >= maxDepth;
       if (done) {
-        if(russianRoulette) prd.doneReason = DoneReason::RUSSIAN_ROULETTE;
-        if(prd.depth >= maxDepth) prd.doneReason = DoneReason::MAX_DEPTH;
+        if (russianRoulette) prd.doneReason = DoneReason::RUSSIAN_ROULETTE;
+        if (prd.depth >= maxDepth) prd.doneReason = DoneReason::MAX_DEPTH;
         break;
       }
       prd.attenuation = safeDivide(prd.attenuation, p);
@@ -1191,7 +1245,7 @@ extern "C" __global__ void __raygen__rg()
     accum_color = lerp(accum_color_prev, accum_color, a);
   }
   params.accumulationBuffer[image_index] = make_float4(accum_color, 1.0f);
-  
+
   //make_color is helper that clamps and gamma corrects the color into sRGB color space
   params.frameBuffer[image_index] = make_color(accum_color);
 
@@ -1248,13 +1302,36 @@ static __forceinline__ __device__ bool isPointNearEdge(const float3& sample_poin
   return nearXEdge || nearYEdge || nearZEdge;
 }
 
+static __forceinline__ __device__ void debugHighlightAABB(VolumePayLoadRayData& vrd, float3 sample_pos) {
+  //lets also highlight the edges of the volume with a red color for debugging
+  float edgeRadius = 2.f;
+  if (isPointNearEdge(sample_pos, vrd.volumeAabb, edgeRadius))
+  {
+    vrd.attenuation *= make_float3(1.0f, 0.0f, 0.0f);
+  }
+
+}
 
 extern "C" __global__ void __miss__volume__ms()
 {
- 
+
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadMissVolumePRD();
- 
+
+  /*
+   Volumetric tracing accumation happens here
+   this is all the different data that is available in the payload to be read and written to
+  vrd.attenuation; // this is set to color for all the other materials in the program and works fine like that
+  vrd.radiance;
+  vrd.emissionColor;
+  vrd.direction;
+  vrd.done;
+  vrd.doneReason;
+  vrd.step; // which step along the path we are
+  vrd.tMax; // the size of the step taken
+  vrd.randomSeed; // the seed for the random number generator
+
+  */
 
   const float3 ray_dir = optixGetWorldRayDirection();
   const float3 ray_org = optixGetWorldRayOrigin();
@@ -1263,36 +1340,37 @@ extern "C" __global__ void __miss__volume__ms()
 
   unsigned int seed = vrd.randomSeed;
 
-  float3 aabb_center = make_float3(
-     (vrd.volumeAabb.maxX + vrd.volumeAabb.minX) / 2.0f,
-     (vrd.volumeAabb.maxY + vrd.volumeAabb.minY) / 2.0f,
-     (vrd.volumeAabb.maxZ + vrd.volumeAabb.minZ) / 2.0f
-  );
+  //debugHighlightAABB(vrd, sample_pos); //use this to display the edges of the volume for debugging
 
-  //lets also highlight the edges of the volume with a red color for debugging
-  float edgeRadius = 2.f;
-  if (isPointNearEdge(sample_pos, vrd.volumeAabb, edgeRadius))
-  {
-    vrd.attenuation *= make_float3(1.0f, 0.0f, 0.0f);
+  VolumeSample sample = sampleVolumeData(sample_pos, vrd.volumeAabb);
+
+
+
+
+  float dt = vrd.tMax;  // step size in terms of ray distance
+  float sigma = sample.density * 0.01f;  // Reduced sigma to prevent rapid attenuation
+  float3 sampleColor = make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
+
+  float3 colorAttenuation = expf(-sigma * sampleColor * dt * .01);
+
+
+
+
+
+  if (sigma >= 1.0f) {
+    vrd.attenuation = sampleColor;
+    vrd.radiance = colorAttenuation;
+    vrd.done = true;
+    vrd.doneReason = DoneReason::ABSORBED;
   }
+  //vrd.attenuation *= colorAttenuation;
 
-  VolumeSample sample = sampleSphereVolume(vrd, sample_pos, ray_dir, aabb_center, 50.0f);
-
-  if (sample.density > 0)
-  {
-    // Apply Beer-Lambert law for absorption based on the density.
-    float absorptionCoefficient = -logf(max(1.0f - sample.density, 0.001f)); // Avoid -inf or NaN
-    float3 absorbedColor = make_float3(sample.rgba.x, sample.rgba.y, sample.rgba.z);
-
-    // Assuming the light source color is white, which means it contains all colors equally,
-    // the absorbed color will tint the attenuation.
-    vrd.attenuation *= absorbedColor * make_float3(expf(-absorptionCoefficient));
-  }
+  
 
   vrd.origin = sample_pos;
   vrd.direction = ray_dir;
-  storeMissVolumePRD(vrd);
- 
+  storeMissVolumePRD(vrd); //this saves the payload back to the global memory for the next iteration
+
 }
 
 extern "C" __global__ void __closesthit__volume__ch() {
@@ -1303,7 +1381,7 @@ extern "C" __global__ void __closesthit__volume__ch() {
   optixSetPayloadTypes(VOLUME_PAYLOAD_TYPE);
   VolumePayLoadRayData vrd = loadClosesthitVolumePRD();
 
-  
+
 
   HitGroupData* rt_data = (HitGroupData*)optixGetSbtDataPointer();
   const float3 ray_dir = optixGetWorldRayDirection();
@@ -1319,10 +1397,10 @@ extern "C" __global__ void __closesthit__volume__ch() {
     ray_origin.y >= aabb.minY && ray_origin.y <= aabb.maxY &&
     ray_origin.z >= aabb.minZ && ray_origin.z <= aabb.maxZ);
   bool originOutside = !originInside;
-    
+
   //for debugging print the origin, hitpoint and the direction on one line
-  
-  if(originOutside)
+
+  if (originOutside)
   {
     vrd.origin = hit_point;
     vrd.direction = ray_dir;
@@ -1330,11 +1408,11 @@ extern "C" __global__ void __closesthit__volume__ch() {
     //printf("Origin is outside the volume\n");
     return;
   }
-    //printf("Origin: %f %f %f, Hitpoint: %f %f %f, Direction: %f %f %f\n", 
-    //  ray_origin.x, ray_origin.y, ray_origin.z, 
-    //  hit_point.x, hit_point.y, hit_point.z, 
-    //  ray_dir.x, ray_dir.y, ray_dir.z
-    //);
+  //printf("Origin: %f %f %f, Hitpoint: %f %f %f, Direction: %f %f %f\n", 
+  //  ray_origin.x, ray_origin.y, ray_origin.z, 
+  //  hit_point.x, hit_point.y, hit_point.z, 
+  //  ray_dir.x, ray_dir.y, ray_dir.z
+  //);
 
   const uint3 idx = rt_data->indices[optixGetPrimitiveIndex()];
   const float3 v0 = make_float3(rt_data->vertices[idx.x]);
@@ -1359,11 +1437,11 @@ extern "C" __global__ void __closesthit__volume__ch() {
     vrd.doneReason = DoneReason::VOLUME_BOUNDARY;
     break;
   case BSDFType::BSDF_DIFFUSE:
-   // printf("Hit a diffuse surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
+    // printf("Hit a diffuse surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     ShadeDiffuse(shadingParams, rt_data);
     break;
   case BSDFType::BSDF_METALLIC:
-   // printf("Hit a metallic surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
+    // printf("Hit a metallic surface inside the volume from %s the volume\n", originInside ? "inside" : "outside");
     ShadeMetallic(shadingParams, rt_data);
     break;
   case BSDFType::BSDF_REFRACTION:
@@ -1424,8 +1502,8 @@ extern "C" __global__ void __closesthit__diffuse__ch()
   const bool      useImportanceSampling = params.useImportanceSampling;
   const float     metalRoughOffset = params.metallicRoughness;
   const float     refractRoughOffset = params.refractiveRoughness;
-  const float     metallic = rt_data->metallic; 
-        float     roughness = rt_data->roughness;
+  const float     metallic = rt_data->metallic;
+  float     roughness = rt_data->roughness;
   const float     IOR = rt_data->IOR;
   const BSDFType  bsdfType = rt_data->bsdfType;
 
@@ -1459,71 +1537,88 @@ extern "C" __global__ void __closesthit__diffuse__ch()
 
   switch (bsdfType)
   {
-    case BSDFType::BSDF_DIFFUSE:
-    {
-      ShadeDiffuse(shadingParams, rt_data);
-      break;
-    }
-    case BSDFType::BSDF_METALLIC:
-    {
-      ShadeMetallic(shadingParams, rt_data);
-      break;
-    }
-    case BSDFType::BSDF_REFRACTION:
-    {
-      shadingParams.normal = N_0;
-      ShadeDielectric(shadingParams, rt_data);
-      break;
-
-    }
-    case BSDFType::BSDF_VOLUME: {
-      shadingParams.normal = N_0;
-      ShadeVolume(shadingParams, rt_data);
-
-      
-  
-      break;
-    }
-    default: 
-    {
-      break;
-    }
-  }
-
-  prd.attenuation = shadingParams.attenuation;
-  prd.origin = shadingParams.origin;
-  prd.direction = shadingParams.direction;
-
-  const float z1 = rnd(seed);
-  const float z2 = rnd(seed);
-  prd.randomSeed = seed;
-
-  float weight = 0.01f;
-  AreaLight light = params.areaLight;
-
-  if (length(rt_data->emissionColor) > 0.0f && bsdfType != BSDFType::BSDF_VOLUME) {
-    prd.radiance = rt_data->emissionColor;
-    prd.done = true;
-    prd.doneReason = DoneReason::LIGHT_HIT;
-  }
-
-
-
-  if (useDirectLighting && bsdfType != BSDFType::BSDF_REFRACTION && bsdfType != BSDFType::BSDF_VOLUME) // this direct lightin model does not work at all with refraction
+  case BSDFType::BSDF_DIFFUSE:
   {
-    weight = 0.0f;
-    //perturb the light position
-    const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
+    ShadeDiffuse(shadingParams, rt_data);
+    break;
+  }
+  case BSDFType::BSDF_METALLIC:
+  {
+    ShadeMetallic(shadingParams, rt_data);
+    break;
+  }
+  case BSDFType::BSDF_REFRACTION:
+  {
+    shadingParams.normal = N_0;
+    ShadeDielectric(shadingParams, rt_data);
+    break;
 
-    // Calculate properties of light sample (for area based pdf)
-    const float  Ldist = length(light_pos - P);
-    const float3 L = normalize(light_pos - P);
-    const float  nDl = dot(N, L);
-    const float  LnDl = -dot(light.normal, L);
+  }
+  case BSDFType::BSDF_VOLUME: {
 
-        if (nDl > 0.0f && LnDl > 0.0f)
-        {
-          const bool occluded = traceOcclusion(params.handle,P,L,0.01f, Ldist - 0.01f);  
+    shadingParams.normal = N_0;
+    shadingParams.emission = prd.emissionColor;
+    shadingParams.done = prd.done;
+    shadingParams.doneReason = prd.doneReason;
+    shadingParams.radiance = prd.radiance;
+
+    ShadeVolume(shadingParams, rt_data);
+
+    //prd.radiance = shadingParams.radiance;
+    prd.done = shadingParams.done;
+    prd.doneReason = shadingParams.doneReason;
+    if (shadingParams.doneReason == DoneReason::ABSORBED)
+    {
+      //printf("Absorbed\n");
+      ////print the pixel color now that the ray is done
+      //printf("Pixel Color: %f %f %f\n", prd.attenuation.x, prd.attenuation.y, prd.attenuation.z);
+    }
+    prd.radiance = shadingParams.radiance;
+
+    break;
+  }
+  default:
+  {
+    break;
+  }
+  }
+    prd.attenuation = shadingParams.attenuation;
+    prd.origin = shadingParams.origin;
+    prd.direction = shadingParams.direction;
+
+  if (!prd.done) {
+
+
+    const float z1 = rnd(seed);
+    const float z2 = rnd(seed);
+    prd.randomSeed = seed;
+
+    float weight = 0.01f;
+    AreaLight light = params.areaLight;
+
+    if (length(rt_data->emissionColor) > 0.0f && bsdfType != BSDFType::BSDF_VOLUME) {
+      prd.radiance = rt_data->emissionColor;
+      prd.done = true;
+      prd.doneReason = DoneReason::LIGHT_HIT;
+    }
+
+
+
+    if (useDirectLighting && bsdfType != BSDFType::BSDF_REFRACTION && bsdfType != BSDFType::BSDF_VOLUME) // this direct lightin model does not work at all with refraction
+    {
+      weight = 0.0f;
+      //perturb the light position
+      const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
+
+      // Calculate properties of light sample (for area based pdf)
+      const float  Ldist = length(light_pos - P);
+      const float3 L = normalize(light_pos - P);
+      const float  nDl = dot(N, L);
+      const float  LnDl = -dot(light.normal, L);
+
+      if (nDl > 0.0f && LnDl > 0.0f)
+      {
+        const bool occluded = traceOcclusion(params.handle, P, L, 0.01f, Ldist - 0.01f);
 
         if (!occluded)
         {
@@ -1531,10 +1626,10 @@ extern "C" __global__ void __closesthit__diffuse__ch()
           weight = nDl * LnDl * A / (M_PIf * Ldist * Ldist);
           prd.radiance += light.emission * weight;
         }
-      }                               
-  }
- 
+      }
+    }
 
+  }
 
   storeClosesthitRadiancePRD(prd);
 }

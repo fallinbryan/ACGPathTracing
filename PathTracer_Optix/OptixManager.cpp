@@ -51,6 +51,11 @@ static OptixSettings copySettings(const OptixSettings& src)
     _state.params.maxDepth = settings.max_depth;
     _state.params.useDirectLighting = true;
     _state.params.useImportanceSampling = true;
+    _state.params.volumeData = settings.volume_data;
+    _state.params.volumeSz = settings.volume_sz;
+    _state.params.volumeWidth = settings.volume_width;
+    _state.params.volumeHeight = settings.volume_height;
+    _state.params.volumeDepth = settings.volume_depth;
 
     ui.width = settings.scene_width;
     ui.height = settings.scene_height;

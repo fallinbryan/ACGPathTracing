@@ -157,6 +157,12 @@ struct PathTraceParams {
   float refractiveRoughness;
   float metallicRoughness;
 
+  float* volumeData;
+  size_t volumeSz;
+  size_t volumeWidth;
+  size_t volumeHeight;
+  size_t volumeDepth;
+
 
 };
 
@@ -186,8 +192,12 @@ struct ShadingParams
   float3 hitpoint;
   float3 direction;
   float3 attenuation;
+  float3 radiance;
+  float3 emission;
   unsigned int seed;
   float3 origin;
+  bool done;
+  DoneReason doneReason;
 };
 
 struct VolumeSample

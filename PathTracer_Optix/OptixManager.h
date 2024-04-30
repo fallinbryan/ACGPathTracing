@@ -77,6 +77,11 @@ struct OptixSettings {
   unsigned int max_depth = 5;
   bool useDirectLighting = true;
   bool useImportanceSampling = true;
+  float* volume_data = nullptr;
+  size_t volume_sz = 0;
+  size_t volume_width = 0;
+  size_t volume_height = 0;
+  size_t volume_depth = 0;
 };
 
 
