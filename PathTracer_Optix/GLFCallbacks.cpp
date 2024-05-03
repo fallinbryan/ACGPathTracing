@@ -52,10 +52,48 @@
     manager->ui.camera_changed = true;
 }
 
+ void moveCameraForward(OptixManager* manager, float speed) {
+
+    float3 translation = make_float3(0.0f, 0.0f, speed);
+    manager->ui.translateCamera(translation);
+    manager->ui.camera_changed = true;
+ }
+
+ void moveCameraBackward(OptixManager* manager, float speed) {
+      float3 translation = make_float3(0.0f, 0.0f, -speed);
+      manager->ui.translateCamera(translation);
+      manager->ui.camera_changed = true;
+  }
+
+ void moveCameraUp(OptixManager* manager, float speed) {
+     float3 translation = make_float3(0.0f, speed, 0.0f);
+      manager->ui.translateCamera(translation);
+      manager->ui.camera_changed = true;
+ }
+
+ void moveCameraDown(OptixManager* manager, float speed) {
+      float3 translation = make_float3(0.0f, -speed, 0.0f);
+        manager->ui.translateCamera(translation);
+        manager->ui.camera_changed = true;
+  }
+
+ void moveCameraLeft(OptixManager* manager, float speed) {
+        float3 translation = make_float3(-speed, 0.0f, 0.0f);
+          manager->ui.translateCamera(translation);
+          manager->ui.camera_changed = true;
+    }
+
+ void moveCameraRight(OptixManager* manager, float speed) {
+            float3 translation = make_float3(speed, 0.0f, 0.0f);
+              manager->ui.translateCamera(translation);
+              manager->ui.camera_changed = true;
+        }
+
  void keyCallback(GLFWwindow* window, int32_t key, int32_t /*scancode*/, int32_t action, int32_t /*mods*/)
 {
 
   float stepSize = .105f;
+  float cameraSpeed = 10.0f;
 
   OptixManager* manager = AppController::getInstance().getOptixManager();
 
@@ -87,7 +125,24 @@
         break;
       case GLFW_KEY_R:
         break;
-
+      case GLFW_KEY_W:
+        moveCameraForward(manager, cameraSpeed);
+        break;
+      case GLFW_KEY_S:
+        moveCameraBackward(manager, cameraSpeed);
+        break;
+      case GLFW_KEY_A:
+        moveCameraLeft(manager, cameraSpeed);
+        break;
+      case GLFW_KEY_D:
+        moveCameraRight(manager, cameraSpeed);
+        break;
+      case GLFW_KEY_Q:
+        moveCameraUp(manager, cameraSpeed);
+        break;
+      case GLFW_KEY_E:
+        moveCameraDown(manager, cameraSpeed);
+        break;
       default:
         manager->ui.refreshAccumulationBuffer = false;
         break;

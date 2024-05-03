@@ -1069,7 +1069,7 @@ static __forceinline__ __device__ void ShadeVolume(ShadingParams& prd, HitGroupD
   const OptixAabb volumeAabb = rt_data->aabb;
 
   float max_distance = fmaxf(fmaxf(volumeAabb.maxX - volumeAabb.minX, volumeAabb.maxY - volumeAabb.minY), volumeAabb.maxZ - volumeAabb.minZ);
-  float step_size = max_distance / 100;
+  float step_size = max_distance / 200;
 
   float3 origin = hitPoint + ray_dir * .001f;
 

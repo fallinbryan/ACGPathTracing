@@ -675,7 +675,7 @@ static OptixSettings copySettings(const OptixSettings& src)
 
       for (int i = 0; i < NUM_RAYTYPES; i++) {
         OPTIX_CHECK(optixSbtRecordPackHeader(_state.miss_prog_groups[i], &miss_record[i]));
-        miss_record[i].data.backgroundColor = make_float4(0.0f);
+        miss_record[i].data.backgroundColor = make_float4(0.4f);
       }
 
       CUDA_CHECK(cudaMemcpy(
